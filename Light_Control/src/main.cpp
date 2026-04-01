@@ -16,7 +16,7 @@ PID controller(0.02, 0.1, 0.0,  // Kp, Ki, Kd
                1.0, 0.0,       // beta, gamma
                TS,           // Ts
                1.0,            // Kff
-               false,           // use feedforward
+               true,           // use feedforward
                true);
 
 static void applyPendingCommands() {
@@ -60,9 +60,6 @@ static void applyPendingCommands() {
   if (pending.hasReferenceLux) {
     gInputs.referenceLux = pending.newReferenceLux;
   }
-  if (pending.hasBeta) {
-    gInputs.beta = pending.newBeta;
-  }
   if (pending.hasAntiWindupEnabled) {
     gInputs.antiWindupEnabled = pending.newAntiWindupEnabled;
   }
@@ -78,7 +75,7 @@ static void applyPendingCommands() {
   critical_section_exit(&gStateLock);
 
   if (pending.hasBeta) {
-    controller.setsetpointWeighting(pending.newBeta, 0.0);
+    controller.setWeight(PID::BETA, pending.newBeta);
   }
   if (pending.hasAntiWindupEnabled) {
     controller.setAntiWindup(pending.newAntiWindupEnabled);

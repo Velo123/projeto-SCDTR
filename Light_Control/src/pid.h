@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "cfg.h"
+#include "shared.h"
 
 // =====================
 // GLOBAL VARIABLES
@@ -31,6 +32,7 @@ private:
     float beta, gamma;
     float Kff;
     float Ts;
+    float luminaireGain[3];
 
     float integrator;
     float previousMeasurement;
@@ -38,23 +40,39 @@ private:
 
     float outputMin, outputMax;
 
-    bool useFeedforward;
-    bool antiWindup;
+    bool FBon;
+    bool AWon;
 
 public:
+    enum Weight : uint8_t {
+        KP = 0,
+        KI,
+        KD,
+        BETA,
+        GAMMA,
+        KFF,
+        SAMPLE_TIME
+    };
+
     PID(float kp, float ki, float kd,
         float swbeta, float g,
         float ts,
         float kff,
-        bool useFF,
-        bool antiWindupEnabled);
+        bool FBon,
+        bool AWon);
 
     void reset();
     float compute(float reference, float measurement);
     void setOutputLimits(float minVal, float maxVal);
     void setsetpointWeighting(float swbeta, float g);
+    bool setWeight(Weight weight, float value);
+    float getWeight(Weight weight) const;
+    bool setLuminaireGain(uint8_t luminaireId, float gain);
+    float getLuminaireGain(uint8_t luminaireId) const;
     void setModeFeedforward(bool enable);
     void setAntiWindup(bool enable);
 };
+
+extern PID controller;
 
 #endif  // PID_H

@@ -73,13 +73,13 @@ PID::PID(float kp, float ki, float kd,
         float swbeta, float g,
         float ts,
         float kff,
-        bool useFF,
-        bool antiWindupEnabled)
+    bool feedBackOn,
+    bool antiWindupOn)
 {
     Kp = kp; Ki = ki; Kd = kd;
     beta = swbeta; gamma = g;
     Kff = kff;
-    Ts = ts;
+    Ts = ts; 
 
     integrator = 0.0;
     previousMeasurement = 0.0;
@@ -88,8 +88,12 @@ PID::PID(float kp, float ki, float kd,
     outputMin = 0.0;
     outputMax = 1.0;
 
-    useFeedforward = useFF;
-    antiWindup = antiWindupEnabled;
+    for (int i = 0; i < 3; i++) {
+        luminaireGain[i] = 0.0f;
+    }
+
+    FBon = feedBackOn;
+    AWon = antiWindupOn;
 }
 
 void PID::reset() {
@@ -100,9 +104,38 @@ void PID::reset() {
 
 float PID::compute(float reference, float measurement) {
 
-    if (useFeedforward) {
-        // modo feedforward puro
-        float output = Kff * reference;
+    ControlInputs inputs;
+    float gains[3] = {0.0f, 0.0f, 0.0f};
+    critical_section_enter_blocking(&gStateLock); // make a local copy to minimize time in critical section
+        inputs.referenceLux = gInputs.referenceLux;
+        inputs.antiWindupEnabled = gInputs.antiWindupEnabled;
+        inputs.feedbackEnabled = gInputs.feedbackEnabled;
+        inputs.luminanceControlEnabled = gInputs.luminanceControlEnabled;  
+        inputs.occupancyState = gInputs.occupancyState;
+        for (int i = 0; i < 3; i++) {
+            inputs.pwm[i] = gInputs.pwm[i];
+            gains[i] = luminaireGain[i];
+        } 
+    critical_section_exit(&gStateLock);
+
+
+    float external_lux=0.0;
+
+    if(_luminaireId == 0){
+        external_lux = inputs.pwm[1]*gains[1] + inputs.pwm[2]*gains[2];
+    }
+    else if(_luminaireId == 1){
+        external_lux = inputs.pwm[0]*gains[0] + inputs.pwm[2]*gains[2];
+    }
+    else if(_luminaireId == 2){
+        external_lux = inputs.pwm[0]*gains[0] + inputs.pwm[1]*gains[1];
+    }
+    
+
+
+    if (!FBon) {
+        // modo feedforward (apenas ação proporcional ao setpoint) 
+        float output = Kff * reference - external_lux; // feedforward puro
         // saturação
         if (output > outputMax) output = outputMax;
         if (output < outputMin) output = outputMin;
@@ -116,7 +149,7 @@ float PID::compute(float reference, float measurement) {
     float D = Kd * ((gamma * reference - measurement) -
                     (gamma * previousReference - previousMeasurement)) / Ts;
 
-    if (antiWindup) {
+    if (AWon) {
         if (!((P + integrator + D >= outputMax && error > 0) ||
               (P + integrator + D <= outputMin && error < 0))) 
         {
@@ -148,10 +181,85 @@ void PID::setsetpointWeighting(float swbeta, float g) {
     gamma = g;
 }
 
+bool PID::setWeight(Weight weight, float value) {
+    switch (weight) {
+        case KP:
+            Kp = value;
+            return true;
+        case KI:
+            Ki = value;
+            return true;
+        case KD:
+            Kd = value;
+            return true;
+        case BETA:
+            beta = value;
+            return true;
+        case GAMMA:
+            gamma = value;
+            return true;
+        case KFF:
+            Kff = value;
+            return true;
+        case SAMPLE_TIME:
+            if (value <= 0.0f) {
+                return false;
+            }
+            Ts = value;
+            return true;
+        default:
+            return false;
+    }
+}
+
+float PID::getWeight(Weight weight) const {
+    switch (weight) {
+        case KP:
+            return Kp;
+        case KI:
+            return Ki;
+        case KD:
+            return Kd;
+        case BETA:
+            return beta;
+        case GAMMA:
+            return gamma;
+        case KFF:
+            return Kff;
+        case SAMPLE_TIME:
+            return Ts;
+        default:
+            return 0.0f;
+    }
+}
+
+bool PID::setLuminaireGain(uint8_t luminaireId, float gain) {
+    if (luminaireId >= 3) {
+        return false;
+    }
+
+    critical_section_enter_blocking(&gStateLock);
+    luminaireGain[luminaireId] = gain;
+    critical_section_exit(&gStateLock);
+    return true;
+}
+
+float PID::getLuminaireGain(uint8_t luminaireId) const {
+    if (luminaireId >= 3) {
+        return 0.0f;
+    }
+
+    float gain;
+    critical_section_enter_blocking(&gStateLock);
+    gain = luminaireGain[luminaireId];
+    critical_section_exit(&gStateLock);
+    return gain;
+}
+
 void PID::setModeFeedforward(bool enable) {
-    useFeedforward = enable;
+    FBon = enable;
 }
 
 void PID::setAntiWindup(bool enable) {
-    antiWindup = enable;
+    AWon = enable;
 }

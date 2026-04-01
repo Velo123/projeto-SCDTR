@@ -278,10 +278,7 @@ void executeCommand(Command cmd) {
 
     else if (cmd.subCmd == "w") {
       // Get setpoint weighting: g w <i>
-      float beta;
-      critical_section_enter_blocking(&gStateLock);
-      beta = gInputs.beta;
-      critical_section_exit(&gStateLock);
+      float beta = controller.getWeight(PID::BETA);
       sendGetResponse(cmd, beta);
     }
   }
@@ -375,7 +372,7 @@ void print_to_serial() {
   float ldrResistance;
   float duty;
   bool antiWindup;
-  float beta;
+  float beta = controller.getWeight(PID::BETA);
 
   critical_section_enter_blocking(&gStateLock);
   timestamp = gOutputs.timestampMs;
@@ -385,7 +382,6 @@ void print_to_serial() {
   ldrResistance = gOutputs.ldrResistance;
   duty = gOutputs.duty;
   antiWindup = gInputs.antiWindupEnabled;
-  beta = gInputs.beta;
   critical_section_exit(&gStateLock);
 
   //time,luminaire_ID,lux_ref,lux_meas,LDRvoltage,LDRresistance,duty_cycle,windup_state,setpoint-weight

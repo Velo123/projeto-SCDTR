@@ -4,7 +4,6 @@
 
 struct ControlInputs {
   float referenceLux;
-  float beta;
   bool antiWindupEnabled;
   bool feedbackEnabled;
   bool luminanceControlEnabled;
