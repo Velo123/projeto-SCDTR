@@ -7,8 +7,8 @@ MCP2515 can0 {spi0, 17, 19, 16, 18, 10000000};
 void init_can(){
     can0.reset();
     can0.setBitrate(CAN_1000KBPS);
-    //can0.setNormalMode();
-    can0.setLoopbackMode();        
+    can0.setNormalMode();
+    //can0.setLoopbackMode();        
 }
 
 static float unpackFloatPayload(const can_frame& frame) {
@@ -85,21 +85,18 @@ static bool buildCommandFromSerialType(const CANSerialMsgType type, const CANDec
 void encode_and_send(uint8_t type, uint8_t srcID, uint8_t dstID, uint8_t msgType, float value){
     //Build ID
     canid_t id = encodeID(type, srcID, dstID, msgType);
-    
     //build message
     can_frame msg{};
     msg.can_id = id;
     CAN_packFloat(value, msg.data);
     msg.can_dlc = CAN_FLOAT_PAYLOAD_LEN;
-    //Serial.print("SENT MESSAGE RETURN:");
-    //Serial.println(can0.sendMessage(&msg));
     can0.sendMessage(&msg);
+
 }
 
 void encode_and_send_status(uint8_t srcID, uint8_t dstID, bool success) {
     const uint8_t msgType = success ? CAN_MSG_ACK : CAN_MSG_ERR;
-    canid_t id = encodeID(SERIAL, srcID, dstID, msgType);
-
+    canid_t id = encodeID(FSERIAL, srcID, dstID, msgType);
     can_frame msg{};
     msg.can_id = id;
     msg.can_dlc = 0;
@@ -111,7 +108,7 @@ void CAN_packFloat(float value, uint8_t outPayload[CAN_FLOAT_PAYLOAD_LEN]) {
 }
 
 canid_t encodeID(uint8_t type, uint8_t srcID, uint8_t dstID, uint8_t msgType){
-    if (type != INTERNAL && type != SERIAL) {
+    if (type != INTERNAL && type != FSERIAL) {
         return 0;
     }
 
@@ -124,7 +121,7 @@ canid_t encodeID(uint8_t type, uint8_t srcID, uint8_t dstID, uint8_t msgType){
     id |= (static_cast<canid_t>(type)  << CAN_PRIORITY_SHIFT) & CAN_PRIORITY_MASK;
     id |= (static_cast<canid_t>(srcID) << CAN_SRC_SHIFT) & CAN_SRC_MASK;
 
-    if (type == SERIAL) {
+    if (type == FSERIAL) {
         if (dstID > (CAN_DST_MASK >> CAN_DST_SHIFT) || msgType > CAN_MSG_TYPE_MASK) {
             return 0;
         }
@@ -152,7 +149,7 @@ bool decodeID(canid_t canID, CANDecodedID& out) {
     out.type = static_cast<uint8_t>((id & CAN_PRIORITY_MASK) >> CAN_PRIORITY_SHIFT);
     out.srcID = static_cast<uint8_t>((id & CAN_SRC_MASK) >> CAN_SRC_SHIFT);
 
-    if (out.type != INTERNAL && out.type != SERIAL) {
+    if (out.type != INTERNAL && out.type != FSERIAL) {
         return false;
     }
 
@@ -160,7 +157,7 @@ bool decodeID(canid_t canID, CANDecodedID& out) {
         return false;
     }
 
-    if (out.type == SERIAL) {
+    if (out.type == FSERIAL) {
         out.dstID = static_cast<uint8_t>((id & CAN_DST_MASK) >> CAN_DST_SHIFT);
         out.msgType = static_cast<uint8_t>((id & CAN_MSG_TYPE_MASK) >> CAN_MSG_TYPE_SHIFT);
 
@@ -181,7 +178,7 @@ bool decodeCommand(canid_t canID, CANSerialMsgType& outCommand) {
         return false;
     }
 
-    if (decoded.type != SERIAL) {
+    if (decoded.type != FSERIAL) {
         return false;
     }
 
@@ -199,8 +196,6 @@ void processirq(){
     //get message from buffer
     can_frame frm{};
 
-
-
     if(irq & MCP2515::CANINTF_RX0IF) {
         can0.readMessage( MCP2515::RXB0, &frm );
     }
@@ -209,18 +204,36 @@ void processirq(){
     }
     uint8_t err = can0.getErrorFlags();
     
-
+    
 
     //decode message type
     CANDecodedID receivedFrame{};
 
-    if(decodeID(frm.can_id, receivedFrame)==false){
-        Serial.print("Error decoding CAN ID");
-        Serial.println(frm.can_id, HEX);
-        //Error decoding CAN ID"
-    }
+    if(decodeID(frm.can_id, receivedFrame)==false){}
+
+    if (debugger_can)
+    {
+        Serial.println("CAN IRQ received. Interrupt flags:");
+        Serial.println(irq, BIN);
+        Serial.println("Error flags:");
+        Serial.println(err, BIN);
+        Serial.println("Received CAN message");
+        Serial.print("ID: ");
+        Serial.println(frm.can_id, DEC);
+        Serial.print(" Decoded as - Type: ");
+        Serial.println(receivedFrame.type);
+        Serial.print(" SrcID: ");
+        Serial.println(receivedFrame.srcID);
+        Serial.print(" DstID: ");
+        Serial.println(receivedFrame.dstID);
+        Serial.print(" MsgType: ");
+        Serial.println(receivedFrame.msgType);
+        Serial.print("Data: ");
+        Serial.println(unpackFloatPayload(frm));
+        Serial.println("---------------------------------------");
+    }   
+    
     //"callback" function to msg type
-    //return; // for now, just return after decoding, to test if decoding works fine. Next step is to execute different code based on msg type and content
     if (receivedFrame.type == INTERNAL) {   //update pwms of other luminaires
         //check src id and update pwm
         if (receivedFrame.srcID < 4 && receivedFrame.srcID >=0 && receivedFrame.srcID != _luminaireId)
@@ -229,20 +242,6 @@ void processirq(){
             critical_section_enter_blocking(&gStateLock);
             gInputs.pwm[receivedFrame.srcID] = unpackFloatPayload(frm);
             critical_section_exit(&gStateLock);
-
-            /*Serial.print("Received CAN message with ID: ");
-            Serial.print(frm.can_id, HEX);
-            Serial.print(" Decoded as - Type: ");
-            Serial.print(receivedFrame.type);
-            Serial.print(" SrcID: ");
-            Serial.print(receivedFrame.srcID);
-            Serial.print(" DstID: ");
-            Serial.print(receivedFrame.dstID);
-            Serial.print(" MsgType: ");
-            Serial.println(receivedFrame.msgType);
-            Serial.print("Updated gInputs.pwm[");
-            Serial.print(unpackFloatPayload(frm));
-            Serial.println("---------------------------------------");*/
         }
     }
     else if (receivedFrame.type == FSERIAL) { 
@@ -256,7 +255,6 @@ void processirq(){
                 }
                 return;
             }
-
             if (receivedFrame.msgType == CAN_MSG_ERR) {
                 if (waiting_can) {
                     waiting_can = false;

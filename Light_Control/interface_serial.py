@@ -70,22 +70,22 @@ def main():
         cmd_thread.start()
         
         # Abre ficheiro para escrita
-        with open(filename, 'w') as f:
+        # with open(filename, 'w') as f:
             # Escreve cabeçalho
-            f.write("time,luminaire_ID,lux_ref,lux_meas,ldrvoltage,ldrresistance,duty_cycle,windup_state,setpoint-weight\n")
+            # f.write("time,luminaire_ID,lux_ref,lux_meas,ldrvoltage,ldrresistance,duty_cycle,windup_state,setpoint-weight\n")
             
-            while running:
-                if ser.in_waiting > 0:
-                    line = ser.readline().decode('utf-8', errors='ignore').strip()
+        while running:
+            if ser.in_waiting > 0:
+                line = ser.readline().decode('utf-8', errors='ignore').strip()
                     
-                    if line:
-                        # Imprime linhas sem vírgulas (respostas do Pico a comandos)
-                        if ',' not in line:
-                            print(line)
-                        # Grava linhas com vírgulas no ficheiro (dados CSV)
-                        elif not line.startswith("Sistema") and not line.startswith("LED"):
-                            f.write(line + "\n")
-                            f.flush()  # Garante que os dados são escritos imediatamente
+                if line:
+                    # Imprime linhas sem vírgulas (respostas do Pico a comandos)
+                    if ',' not in line:
+                        print(line)
+                    # Grava linhas com vírgulas no ficheiro (dados CSV)
+                    #elif not line.startswith("Sistema") and not line.startswith("LED"):
+                    #    f.write(line + "\n")
+                    #    f.flush()  # Garante que os dados são escritos imediatamente
                 
     except KeyboardInterrupt:
         running = False

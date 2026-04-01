@@ -2,10 +2,6 @@
 	"folders": [
 		{
 			"path": "Light_Control"
-		},
-		{
-			"name": "CAN",
-			"path": "CAN"
 		}
 	],
 	"settings": {}

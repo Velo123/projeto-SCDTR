@@ -91,31 +91,29 @@ static void sendCommandResponse(const Command& cmd, bool success) {
 }
 
 void handleSerial() {
+  if (!Serial.available()) {
+    return;
+  }
 
-  if (Serial.available()) {
+  String input = Serial.readStringUntil('\n');
+  input.trim();
 
-    String input = Serial.readStringUntil('\n');
-    input.trim();
-
-    if (input.length() > 0) {
-      Command cmd = parseCommand(input);
-      if (cmd.luminaireId > 3 ) {
+  if (input.length() > 0) {
+    Command cmd = parseCommand(input);
+    if (cmd.luminaireId > 3 ) {
+      Serial.println("err");
+    } else if (cmd.luminaireId == _luminaireId ) {
+      executeCommand(cmd);
+    } else {
+      // Encode message and forward to destination luminaire via CAN
+      uint8_t msgType = 0;
+      if (!mapCommandToCanMsgType(cmd, msgType)) {
         Serial.println("err");
-      } else if (cmd.luminaireId == _luminaireId ) {
-        executeCommand(cmd);
-      } else {
-        // Encode message and forward to destination luminaire via CAN
-        uint8_t msgType = 0;
-        if (!mapCommandToCanMsgType(cmd, msgType)) {
-          Serial.println("err");
-          return;
-        }
-        
-        encode_and_send(FSERIAL, _luminaireId, cmd.luminaireId, msgType, cmd.value);
-        waiting_can = true; // Set flag to indicate we're waiting for a CAN response
+        return;
       }
-    
-    
+      
+      encode_and_send(FSERIAL, _luminaireId, cmd.luminaireId, msgType, cmd.value);
+      waiting_can = true; // Set flag to indicate we're waiting for a CAN response
     }
   }
 }

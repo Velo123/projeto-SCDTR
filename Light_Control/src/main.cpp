@@ -12,7 +12,7 @@
    Sampling: 100 Hz
 */
 const uint8_t interruptPin {0};
-PID controller(0.2, 0.1, 0.0,  // Kp, Ki, Kd
+PID controller(0.02, 0.1, 0.0,  // Kp, Ki, Kd
                1.0, 0.0,       // beta, gamma
                TS,           // Ts
                1.0,            // Kff
@@ -85,7 +85,6 @@ static void applyPendingCommands() {
   }
 }
 
-
 //Core 0: Control loop and sensor reading
 unsigned long lastTimePID = 0;
 
@@ -129,9 +128,7 @@ void loop() {
   }
 }
 
-
 //Core 1: Communications
-
 volatile bool got_irq {false};
 
 //the interrupt service routine for core 1
@@ -140,29 +137,28 @@ void read_interrupt(uint gpio, uint32_t events) {
 }
 
 unsigned long lastTimePWM = 0;
-unsigned long lastTimeSerial = 0;
-unsigned long canTxLedOnUntil = 0;
 
 void setup1() { 
   Serial.begin(115200); 
+  Serial.setTimeout(10);
   init_can();
   gpio_set_irq_enabled_with_callback(interruptPin,GPIO_IRQ_EDGE_FALL,true,&read_interrupt ); 
 }
 
 void loop1() {
   unsigned long now = millis();
-  if (now - lastTimeSerial >= 100) { // 100ms serial update to send messages
-    lastTimeSerial = now;
-    handleSerial();
-  }
-  if (got_irq)
-  {
+
+  if (got_irq){
     got_irq = false; // Reset flag
 
     // Process CAN message
     processirq();
     can0.clearRXnOVRFlags();  
     can0.clearInterrupts();
+  }
+
+  if (Serial.available() > 0) {
+    handleSerial();
   }
 
   if (now - lastTimePWM >= 2000) { // 50ms CAN update
@@ -172,7 +168,7 @@ void loop1() {
     float dutyToSend = gOutputs.duty;
     critical_section_exit(&gStateLock);
     encode_and_send(INTERNAL,_luminaireId,0,0,dutyToSend);
-
+  
     /*
     uint8_t eflags = can0.getErrorFlags();
     uint8_t TEC = can0.errorCountTX();

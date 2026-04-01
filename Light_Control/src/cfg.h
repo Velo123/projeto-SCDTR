@@ -1,7 +1,7 @@
 
 #pragma once
 
-#define _luminaireId 0 
+#define _luminaireId 1
 #define m -0.8 // Slope of log-log curve (assumed)
 #define b 6.10 // Intercept of log-log curve (from calibration)
 
@@ -14,4 +14,5 @@
 
 #define R_FIXED 10000.0  // 10k resistor in divider
 
+#define debugger_can 0
 //#define interruptPin 0 // GPIO pin for MCP2515 interrupt
