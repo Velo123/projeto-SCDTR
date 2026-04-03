@@ -21,6 +21,18 @@ static bool mapCommandToCanMsgType(const Command& cmd, uint8_t& outMsgType) {
     outMsgType = CAN_MSG_SET_FEEDBACK;
     return true;
   }
+  if (cmd.mainCmd == "O") {
+    outMsgType = CAN_MSG_SET_REF_BOUND_HIGH;
+    return true;
+  }
+  if (cmd.mainCmd == "U") {
+    outMsgType = CAN_MSG_SET_REF_BOUND_LOW;
+    return true;
+  }
+  if (cmd.mainCmd == "R") {
+    outMsgType = CAN_MSG_RESTART;
+    return true;
+  }
   if (cmd.mainCmd == "g") {
     if (cmd.subCmd == "u") {
       outMsgType = CAN_MSG_GET_DUTY;
@@ -45,14 +57,75 @@ static bool mapCommandToCanMsgType(const Command& cmd, uint8_t& outMsgType) {
     if (cmd.subCmd == "a") {
       outMsgType = CAN_MSG_GET_ANTI_WINDUP;
       return true;
+    }    if (cmd.subCmd == "O") {
+      outMsgType = CAN_MSG_GET_REF_BOUND_HIGH;
+      return true;
     }
-    if (cmd.subCmd == "f") {
+    if (cmd.subCmd == "U") {
+      outMsgType = CAN_MSG_GET_REF_BOUND_LOW;
+      return true;
+    }
+    if (cmd.subCmd == "L") {
+      outMsgType = CAN_MSG_GET_CURR_REF_BOUND;
+      return true;
+    }    if (cmd.subCmd == "f") {
       outMsgType = CAN_MSG_GET_FEEDBACK;
+      return true;
+    }
+    if (cmd.subCmd == "b") {
+      if (cmd.charValue == 'y') {
+        outMsgType = CAN_MSG_GET_STREAM_BUFFER_Y;
+        return true;
+      }
+      if (cmd.charValue == 'u') {
+        outMsgType = CAN_MSG_GET_STREAM_BUFFER_U;
+        return true;
+      }
+      return false;
+    }
+    if (cmd.subCmd == "t") {
+      outMsgType = CAN_MSG_GET_ELAPSED_TIME;
+      return true;
+    }
+    if (cmd.subCmd == "d") {
+      outMsgType = CAN_MSG_GET_EXT_ILLUM;
       return true;
     }
   }
 
   return false;
+}
+
+static void resetControllerStateToDefaults() {
+  critical_section_enter_blocking(&gStateLock);
+
+  // Reset control inputs to startup defaults (no recalibration).
+  gInputs.referenceLux = 20.0f;
+  gInputs.occupancyState = 'o';
+  gInputs.antiWindupEnabled = true;
+  gInputs.feedbackEnabled = true;
+  gInputs.manualOverride = false;
+  gInputs.pwm[0] = 0.0f;
+  gInputs.pwm[1] = 0.0f;
+  gInputs.pwm[2] = 0.0f;
+  gInputs.refOccupied = 20.0f;
+  gInputs.refLow = 20.0f;
+  gInputs.refHigh = 20.0f;
+
+  // Reset outputs/history buffers.
+  gOutputs.timestampMs = 0;
+  gOutputs.duty = 0.0f;
+  gOutputs.luxMeasured = 0.0f;
+  gOutputs.ldrVoltage = 0.0f;
+  gOutputs.ldrResistance = 0.0f;
+
+  memset((void*)&gHistory, 0, sizeof(gHistory));
+  memset((void*)&gPending, 0, sizeof(gPending));
+
+  critical_section_exit(&gStateLock);
+
+  controller.reset();
+  setPWM(0.0f);
 }
 
 // Helper function to send GET command responses (via Serial or CAN)
@@ -91,6 +164,55 @@ static void sendGetCharResponse(const Command& cmd, char responseValue) {
       return;
     }
     encode_and_send_byte(FSERIAL, _luminaireId, cmd.sourceLuminaireId, msgType, static_cast<uint8_t>(responseValue));
+  }
+}
+
+static void sendGetElapsedTimeResponse(const Command& cmd, float secondsValue) {
+  if (cmd.origin == ORIGIN_SERIAL) {
+    // Elapsed time GET response format: t <i> <val>
+    Serial.print("t");
+    Serial.print(" ");
+    Serial.print(cmd.luminaireId);
+    Serial.print(" ");
+    Serial.println(secondsValue);
+  } else if (cmd.origin == ORIGIN_CAN) {
+    uint8_t msgType = 0;
+    if (!mapCommandToCanMsgType(cmd, msgType)) {
+      Serial.println("err");
+      return;
+    }
+    encode_and_send(FSERIAL, _luminaireId, cmd.sourceLuminaireId, msgType, secondsValue);
+  }
+}
+
+static void sendBufferResponse(char variableId, int luminaireId) {
+  uint16_t head;
+  uint16_t count;
+
+  critical_section_enter_blocking(&gStateLock);
+  head = gHistory.head;
+  count = gHistory.count;
+  critical_section_exit(&gStateLock);
+
+  const uint16_t n = HISTORY_BUFFER_SAMPLES;
+  const uint16_t start = static_cast<uint16_t>((head + n - count) % n);
+
+  Serial.println("-------------------------------------------------------");
+  Serial.print("Buffer ");
+  Serial.print(variableId);
+  Serial.print(" desk ");
+  Serial.println(luminaireId);
+  Serial.print(" time - value ");
+
+  for (uint16_t k = 0; k < count; k++) {
+    const uint16_t idx = static_cast<uint16_t>((start + k) % n);
+    Serial.print(gHistory.timestampMs[idx]);
+    Serial.print(" - ");
+    if (variableId == 'y') {
+      Serial.println(gHistory.illuminanceLux[idx]);
+    } else {
+      Serial.println(gHistory.pwmDuty[idx]);
+    }
   }
 }
 
@@ -191,6 +313,11 @@ void handleSerial() {
       cmd.luminaireId = _luminaireId;
     }
 
+    if (cmd.mainCmd == "R" && cmd.luminaireId < 0) {
+      // Allow plain "R" to target the local luminaire.
+      cmd.luminaireId = _luminaireId;
+    }
+
     if (cmd.luminaireId < 0 || cmd.luminaireId >= 3) {
       Serial.println("err");
     } else if (cmd.luminaireId == _luminaireId ) {
@@ -204,6 +331,9 @@ void handleSerial() {
       }
       if (cmd.mainCmd == "o") {
         // Occupancy set carries a character state ('o', 'l', 'h').
+        encode_and_send_byte(FSERIAL, _luminaireId, cmd.luminaireId, msgType, static_cast<uint8_t>(cmd.charValue));
+      } else if (cmd.mainCmd == "g" && cmd.subCmd == "b") {
+        // Buffer selector is a character ('y' or 'u').
         encode_and_send_byte(FSERIAL, _luminaireId, cmd.luminaireId, msgType, static_cast<uint8_t>(cmd.charValue));
       } else if (cmd.mainCmd == "a" || cmd.mainCmd == "f") {
         // Boolean set commands are encoded as a single byte (0/1).
@@ -259,23 +389,34 @@ Command parseCommand(String input) {
   // Hierarchical decoding
   if (tokenCount >= 1) {
     cmd.mainCmd = tokens_str[0];
+
+    // Restart command supports both "R" and "R <i>".
+    if (cmd.mainCmd == "R") {
+      if (tokenCount >= 2) {
+        cmd.luminaireId = tokens_str[1].toInt();
+      }
+      return cmd;
+    }
     
     // 'g' commands have a subcommand
     if (cmd.mainCmd == "g" && tokenCount >= 2) {
       cmd.subCmd = tokens_str[1];
-      
-      if (tokenCount >= 3) {
-        cmd.luminaireId = tokens_str[2].toInt();
-      }
-      if (tokenCount >= 4) {
-        cmd.value = tokens_str[3].toFloat();
-      }
-    }
-    // 's' (stream start) and 'S' (stream stop)
-    else if ((cmd.mainCmd == "s" || cmd.mainCmd == "S") && tokenCount >= 2) {
-      cmd.subCmd = tokens_str[1];
-      if (tokenCount >= 3) {
-        cmd.luminaireId = tokens_str[2].toInt();
+
+      // Buffer query format: g b <x> <i>
+      if (cmd.subCmd == "b") {
+        if (tokenCount >= 3 && tokens_str[2].length() == 1) {
+          cmd.charValue = tokens_str[2][0];
+        }
+        if (tokenCount >= 4) {
+          cmd.luminaireId = tokens_str[3].toInt();
+        }
+      } else {
+        if (tokenCount >= 3) {
+          cmd.luminaireId = tokens_str[2].toInt();
+        }
+        if (tokenCount >= 4) {
+          cmd.value = tokens_str[3].toFloat();
+        }
       }
     }
     // Other commands
@@ -378,11 +519,11 @@ void executeCommand(Command cmd) {
       sendGetResponse(cmd, feedbackEnabled ? 1.0f : 0.0f);
     }
 
-    else if (cmd.subCmd == "w") {
+    /*else if (cmd.subCmd == "w") {
       // Get setpoint weighting: g w <i>
       float beta = controller.getWeight(PID::BETA);
       sendGetResponse(cmd, beta);
-    }
+    }*/
 
     else if (cmd.subCmd == "d") {
       // Get external luminance: g d <i>
@@ -390,11 +531,70 @@ void executeCommand(Command cmd) {
       sendGetResponse(cmd, externalLuminance);
     }
 
+    else if (cmd.subCmd == "b") {
+      // Get last minute buffer: g b <x> <i>, x in {'y','u'}.
+      if (cmd.charValue == 'y' || cmd.charValue == 'u') {
+        sendBufferResponse(cmd.charValue, cmd.luminaireId);
+
+        // For remote invocation over CAN, only ACK/ERR is returned.
+        if (cmd.origin == ORIGIN_CAN) {
+          sendCommandResponse(cmd, true);
+        }
+      } else {
+        sendCommandResponse(cmd, false);
+      }
+    }
+
+    else if (cmd.subCmd == "t") {
+      // Get elapsed time since restart in seconds: g t <i>
+      float elapsedSeconds = static_cast<float>(millis()) / 1000.0f;
+      sendGetElapsedTimeResponse(cmd, elapsedSeconds);
+    }
+
+    else if (cmd.subCmd == "O") {
+      // Get reference illuminance for HIGH state: g O <i>
+      float refHigh;
+      critical_section_enter_blocking(&gStateLock);
+      refHigh = gInputs.refHigh;
+      critical_section_exit(&gStateLock);
+      sendGetResponse(cmd, refHigh);
+    }
+
+    else if (cmd.subCmd == "U") {
+      // Get reference illuminance for LOW state: g U <i>
+      float refLow;
+      critical_section_enter_blocking(&gStateLock);
+      refLow = gInputs.refLow;
+      critical_section_exit(&gStateLock);
+      sendGetResponse(cmd, refLow);
+    }
+
+    else if (cmd.subCmd == "L") {
+      // Get current lower bound based on occupancy state: g L <i>
+      float currentLowerBound;
+      critical_section_enter_blocking(&gStateLock);
+      char occupState = gInputs.occupancyState;
+      float refOcc = gInputs.refOccupied;
+      float refL = gInputs.refLow;
+      float refH = gInputs.refHigh;
+      critical_section_exit(&gStateLock);
+      
+      // Select appropriate bound based on current occupancy state
+      if (occupState == 'h') {
+        currentLowerBound = refH;
+      } else if (occupState == 'l') {
+        currentLowerBound = refL;
+      } else {
+        currentLowerBound = refOcc;  // 'o' state
+      }
+      sendGetResponse(cmd, currentLowerBound);
+    }
+
     else if (cmd.subCmd == "p") {
       // Local command: print received PWM values from other luminaires.
       //printExternalPwm();
       float pwr=getInstantPower();
-      sendGetResponse(cmd, ); // Just send an ACK for this local command since it doesn't have a single numeric response
+      sendGetResponse(cmd, pwr); // Just send an ACK for this local command since it doesn't have a single numeric response
     }
   }
   // SET commands
@@ -475,6 +675,39 @@ void executeCommand(Command cmd) {
       sendCommandResponse(cmd, false);
     }
   }
+  else if (cmd.mainCmd == "O") {
+    // Set reference illuminance for HIGH state: O <i> <val>
+    if (cmd.luminaireId < 3 && cmd.value >= 0.0f) {
+      critical_section_enter_blocking(&gStateLock);
+      gPending.hasRefHigh = true;
+      gPending.newRefHigh = cmd.value;
+      critical_section_exit(&gStateLock);
+      sendCommandResponse(cmd, true);
+    } else {
+      sendCommandResponse(cmd, false);
+    }
+  }
+  else if (cmd.mainCmd == "U") {
+    // Set reference illuminance for LOW state: U <i> <val>
+    if (cmd.luminaireId < 3 && cmd.value >= 0.0f) {
+      critical_section_enter_blocking(&gStateLock);
+      gPending.hasRefLow = true;
+      gPending.newRefLow = cmd.value;
+      critical_section_exit(&gStateLock);
+      sendCommandResponse(cmd, true);
+    } else {
+      sendCommandResponse(cmd, false);
+    }
+  }
+  else if (cmd.mainCmd == "R") {
+    // Restart logical state: reset values to defaults (without recalibration).
+    if (cmd.luminaireId < 3) {
+      resetControllerStateToDefaults();
+      sendCommandResponse(cmd, true);
+    } else {
+      sendCommandResponse(cmd, false);
+    }
+  }
   /*else if (cmd.mainCmd == "w") {
     // Set setpoint weighting: w <i> <val>
     if (cmd.luminaireId == 0) {
@@ -495,41 +728,27 @@ void executeCommand(Command cmd) {
 
 
 void print_to_serial() {
+#if !STREAM_TELEMETRY_ENABLED
+  return;
+#else
   uint32_t timestamp;
-  float luxRef;
   float luxMeasured;
-  float ldrVoltage;
-  float ldrResistance;
   float duty;
-  bool antiWindup;
-  float beta = controller.getWeight(PID::BETA);
 
   critical_section_enter_blocking(&gStateLock);
   timestamp = gOutputs.timestampMs;
-  luxRef = gInputs.referenceLux;
   luxMeasured = gOutputs.luxMeasured;
-  ldrVoltage = gOutputs.ldrVoltage;
-  ldrResistance = gOutputs.ldrResistance;
   duty = gOutputs.duty;
-  antiWindup = gInputs.antiWindupEnabled;
   critical_section_exit(&gStateLock);
 
-  //time,luminaire_ID,lux_ref,lux_meas,LDRvoltage,LDRresistance,duty_cycle,windup_state,setpoint-weight
+  // Compact stream format for realtime plotting.
+  // time,luminaire_id,lux_meas,duty_cycle
   Serial.print(timestamp);
   Serial.print(",");
   Serial.print(_luminaireId);
   Serial.print(",");
-  Serial.print(luxRef);
-  Serial.print(",");
   Serial.print(luxMeasured);
   Serial.print(",");
-  Serial.print(ldrVoltage);
-  Serial.print(",");
-  Serial.print(ldrResistance);
-  Serial.print(",");
-  Serial.print(duty);
-  Serial.print(",");
-  Serial.print(antiWindup);
-  Serial.print(",");
-  Serial.println(beta);
+  Serial.println(duty);
+#endif
 }

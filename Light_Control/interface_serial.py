@@ -32,7 +32,25 @@ def parse_args():
         "--port",
         help="Define explicitamente a porta serial (ex: /dev/ttyACM0)",
     )
+    parser.add_argument(
+        "--csv-file",
+        help="Caminho do ficheiro CSV para gravar o stream em tempo real",
+    )
     return parser.parse_args()
+
+
+def is_stream_csv_line(line):
+    parts = [p.strip() for p in line.split(",")]
+    if len(parts) != 4:
+        return False
+    try:
+        float(parts[0])
+        float(parts[1])
+        float(parts[2])
+        float(parts[3])
+        return True
+    except ValueError:
+        return False
 
 def find_pico_port():
     """Procura automaticamente a porta do Raspberry Pi Pico."""
@@ -90,8 +108,8 @@ def main():
     else:
         print(f"Porta encontrada: {port}")
     
-    # Nome do ficheiro com timestamp
-    filename = f"adc_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    # Nome do ficheiro com timestamp (ou nome fornecido)
+    filename = args.csv_file or f"adc_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     
     try:
         # Abre conexão serial
@@ -130,22 +148,21 @@ def main():
         cmd_thread.start()
         
         # Abre ficheiro para escrita
-        # with open(filename, 'w') as f:
-            # Escreve cabeçalho
-            # f.write("time,luminaire_ID,lux_ref,lux_meas,ldrvoltage,ldrresistance,duty_cycle,windup_state,setpoint-weight\n")
-            
-        while running:
-            if ser.in_waiting > 0:
-                line = ser.readline().decode('utf-8', errors='ignore').strip()
-                    
-                if line:
-                    # Imprime linhas sem vírgulas (respostas do Pico a comandos)
-                    if ',' not in line:
-                        print(line)
-                    # Grava linhas com vírgulas no ficheiro (dados CSV)
-                    #elif not line.startswith("Sistema") and not line.startswith("LED"):
-                    #    f.write(line + "\n")
-                    #    f.flush()  # Garante que os dados são escritos imediatamente
+        with open(filename, 'w', buffering=1) as f:
+            # Cabeçalho do stream compacto: time,luminaire_id,lux_meas,duty_cycle
+            f.write("time,luminaire_id,lux_meas,duty_cycle\n")
+
+            while running:
+                if ser.in_waiting > 0:
+                    line = ser.readline().decode('utf-8', errors='ignore').strip()
+
+                    if line:
+                        if is_stream_csv_line(line):
+                            # Grava stream para plot sem poluir o terminal.
+                            f.write(line + "\n")
+                        else:
+                            # Mostra apenas respostas/comandos no terminal.
+                            print(line)
                 
     except KeyboardInterrupt:
         running = False

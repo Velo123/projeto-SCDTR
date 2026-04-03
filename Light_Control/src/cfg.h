@@ -40,6 +40,11 @@
 #define TS 0.01 // Control period in seconds (10 ms)
 #define PWM_MAX 255 // Maximum PWM value for 8-bit resolution
 
+// Compile-time telemetry stream control (1 = enabled, 0 = disabled).
+#ifndef STREAM_TELEMETRY_ENABLED
+#define STREAM_TELEMETRY_ENABLED 1
+#endif
+
 #define R_FIXED 10000.0  // 10k resistor in divider
 
 #if IS_RPI_1

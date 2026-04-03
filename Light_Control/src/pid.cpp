@@ -80,20 +80,20 @@ void setPWM(float dutyCycle) {
 }
 
 float compute_avg_flicker(){
-
+    return 0;
 }
 
 float compute_avg_energy(){
-
+    return 0;
 }
 
 float compute_avg_visibility_err(){
-
+    return 0;
 }
 
 float getInstantPower() {
   // Placeholder for actual power computation logic
-  return instant_Pwr;
+  return 0;
 }
 
 // =====================

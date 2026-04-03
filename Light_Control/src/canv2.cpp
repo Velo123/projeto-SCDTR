@@ -81,6 +81,47 @@ static bool buildCommandFromSerialType(const CANSerialMsgType type, const CANDec
             cmd.mainCmd = "g";
             cmd.subCmd = "f";
             return true;
+        case CAN_MSG_GET_STREAM_BUFFER_Y:
+            cmd.mainCmd = "g";
+            cmd.subCmd = "b";
+            cmd.charValue = 'y';
+            return true;
+        case CAN_MSG_GET_STREAM_BUFFER_U:
+            cmd.mainCmd = "g";
+            cmd.subCmd = "b";
+            cmd.charValue = 'u';
+            return true;
+        case CAN_MSG_GET_ELAPSED_TIME:
+            cmd.mainCmd = "g";
+            cmd.subCmd = "t";
+            return true;
+        case CAN_MSG_GET_EXT_ILLUM:
+            cmd.mainCmd = "g";
+            cmd.subCmd = "d";
+            return true;
+        case CAN_MSG_SET_REF_BOUND_HIGH:
+            cmd.mainCmd = "O";
+            cmd.value = unpackFloatPayload(frame);
+            return true;
+        case CAN_MSG_GET_REF_BOUND_HIGH:
+            cmd.mainCmd = "g";
+            cmd.subCmd = "O";
+            return true;
+        case CAN_MSG_SET_REF_BOUND_LOW:
+            cmd.mainCmd = "U";
+            cmd.value = unpackFloatPayload(frame);
+            return true;
+        case CAN_MSG_GET_REF_BOUND_LOW:
+            cmd.mainCmd = "g";
+            cmd.subCmd = "U";
+            return true;
+        case CAN_MSG_GET_CURR_REF_BOUND:
+            cmd.mainCmd = "g";
+            cmd.subCmd = "L";
+            return true;
+        case CAN_MSG_RESTART:
+            cmd.mainCmd = "R";
+            return true;
         default:
             // Message exists in enum but is not mapped to executeCommand yet.
             return false;
@@ -210,7 +251,14 @@ static bool isGetMsgType(uint8_t msgType) {
            msgType == CAN_MSG_GET_LDR_VOLTAGE ||
            msgType == CAN_MSG_GET_OCCUPANCY ||
            msgType == CAN_MSG_GET_ANTI_WINDUP ||
-           msgType == CAN_MSG_GET_FEEDBACK;
+           msgType == CAN_MSG_GET_FEEDBACK ||
+           msgType == CAN_MSG_GET_EXT_ILLUM ||
+           msgType == CAN_MSG_GET_STREAM_BUFFER_Y ||
+           msgType == CAN_MSG_GET_STREAM_BUFFER_U ||
+           msgType == CAN_MSG_GET_ELAPSED_TIME ||
+           msgType == CAN_MSG_GET_REF_BOUND_HIGH ||
+           msgType == CAN_MSG_GET_REF_BOUND_LOW ||
+           msgType == CAN_MSG_GET_CURR_REF_BOUND;
 }
 
 static void processFrame(const can_frame& frm) {
@@ -283,6 +331,26 @@ static void processFrame(const can_frame& frm) {
                     Serial.print(receivedFrame.srcID);
                     Serial.print(" ");
                     Serial.println(occupancy);
+                } else if (receivedFrame.msgType == CAN_MSG_GET_ELAPSED_TIME) {
+                    Serial.print("t ");
+                    Serial.print(receivedFrame.srcID);
+                    Serial.print(" ");
+                    Serial.println(unpackFloatPayload(frm));
+                } else if (receivedFrame.msgType == CAN_MSG_GET_STREAM_BUFFER_Y) {
+                    Serial.print("b y ");
+                    Serial.print(receivedFrame.srcID);
+                    Serial.print(" ");
+                    Serial.println(unpackFloatPayload(frm));
+                } else if (receivedFrame.msgType == CAN_MSG_GET_STREAM_BUFFER_U) {
+                    Serial.print("b u ");
+                    Serial.print(receivedFrame.srcID);
+                    Serial.print(" ");
+                    Serial.println(unpackFloatPayload(frm));
+                } else if (receivedFrame.msgType == CAN_MSG_GET_CURR_REF_BOUND) {
+                    Serial.print("L ");
+                    Serial.print(receivedFrame.srcID);
+                    Serial.print(" ");
+                    Serial.println(unpackFloatPayload(frm));
                 } else {
                     Serial.print("g ");
                     Serial.print(receivedFrame.srcID);

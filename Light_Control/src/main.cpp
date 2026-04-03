@@ -36,6 +36,14 @@ static void applyPendingCommands() {
   }
   if (pending.hasOccupancyState) {
     gInputs.occupancyState = pending.newOccupancyState;
+    // Automatically update reference lux based on new occupancy state
+    if (pending.newOccupancyState == 'h') {
+      gInputs.referenceLux = gInputs.refHigh;
+    } else if (pending.newOccupancyState == 'l') {
+      gInputs.referenceLux = gInputs.refLow;
+    } else {
+      gInputs.referenceLux = gInputs.refOccupied;  // 'o' state
+    }
   }
   if (pending.hasAntiWindupEnabled) {
     gInputs.antiWindupEnabled = pending.newAntiWindupEnabled;
@@ -50,6 +58,15 @@ static void applyPendingCommands() {
     for (int i = 0; i < 3; i++) {
       gInputs.pwm[i] = pending.newpwm[i];
     }
+  }
+  if (pending.hasRefOccupied) {
+    gInputs.refOccupied = pending.newRefOccupied;
+  }
+  if (pending.hasRefLow) {
+    gInputs.refLow = pending.newRefLow;
+  }
+  if (pending.hasRefHigh) {
+    gInputs.refHigh = pending.newRefHigh;
   }
   critical_section_exit(&gStateLock); 
 }
@@ -90,6 +107,16 @@ void loop() {
     gOutputs.luxMeasured = lux;
     gOutputs.ldrVoltage = ldrVoltage;
     gOutputs.ldrResistance = ldrResistance;
+
+    // Store last-minute history in a circular buffer.
+    gHistory.timestampMs[gHistory.head] = now;
+    gHistory.pwmDuty[gHistory.head] = duty;
+    gHistory.illuminanceLux[gHistory.head] = lux;
+    gHistory.head = static_cast<uint16_t>((gHistory.head + 1) % HISTORY_BUFFER_SAMPLES);
+    if (gHistory.count < HISTORY_BUFFER_SAMPLES) {
+      gHistory.count++;
+    }
+
     critical_section_exit(&gStateLock);
   }
   else {
@@ -107,6 +134,7 @@ void read_interrupt(uint gpio, uint32_t events) {
 }
 
 unsigned long lastTimePWM = 0;
+unsigned long lastTimeStream = 0;
 
 void setup1() { 
   Serial.begin(115200); 
@@ -128,6 +156,11 @@ void loop1() {
 
   if (Serial.available() > 0) {
     handleSerial();
+  }
+
+  if (now - lastTimeStream >= 100) {
+    lastTimeStream = now;
+    print_to_serial();
   }
 
   if (now - lastTimePWM >= 5) { // 20ms CAN update

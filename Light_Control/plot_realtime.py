@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""
-Script para desenhar gráficos em tempo real do ficheiro CSV.
-Mostra lux_ref vs lux_meas num gráfico e duty_cycle noutro.
-"""
+"""Plot em tempo real para stream de iluminancia e PWM."""
 
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import glob
 import os
+import time
+import argparse
 from datetime import datetime
 
 WINDOW_SECONDS = 20
 WINDOW_MS = WINDOW_SECONDS * 1000
 
-# Encontra o ficheiro CSV mais recente
+def parse_args():
+    parser = argparse.ArgumentParser(description="Plot realtime para stream CSV")
+    parser.add_argument("--csv-file", help="Ficheiro CSV específico para plotar")
+    parser.add_argument("--wait", action="store_true", help="Espera o ficheiro existir")
+    return parser.parse_args()
+
+
 def find_latest_csv():
     csv_files = glob.glob("adc_data_*.csv")
     if not csv_files:
@@ -24,6 +29,9 @@ def find_latest_csv():
 def update_plot(frame):
     """Atualiza os gráficos com os dados mais recentes"""
     try:
+        if not os.path.exists(csv_file):
+            return
+
         # Lê o ficheiro CSV
         df = pd.read_csv(csv_file)
         
@@ -51,12 +59,11 @@ def update_plot(frame):
         ax1.clear()
         ax2.clear()
         
-        # Gráfico 1: Lux Ref vs Lux Meas
-        ax1.plot(x_seconds, df_window['lux_ref'], 'b-', label='Lux Ref', linewidth=2)
+        # Gráfico 1: Iluminancia medida
         ax1.plot(x_seconds, df_window['lux_meas'], 'r-', label='Lux Meas', linewidth=2)
         ax1.set_xlabel('Tempo (s)')
         ax1.set_ylabel('Luminância (lux)')
-        ax1.set_title('Luminância: Referência vs Medida')
+        ax1.set_title('Luminância Medida')
         ax1.legend(loc='upper left')
         ax1.grid(True, alpha=0.3)
         
@@ -75,8 +82,13 @@ def update_plot(frame):
     except Exception as e:
         print(f"Erro ao atualizar gráfico: {e}")
 
-# Procura o ficheiro CSV mais recente
-csv_file = find_latest_csv()
+args = parse_args()
+
+csv_file = args.csv_file or find_latest_csv()
+
+if args.wait and csv_file is not None:
+    while not os.path.exists(csv_file):
+        time.sleep(0.2)
 
 if not csv_file:
     print("Nenhum ficheiro CSV encontrado!")
