@@ -20,7 +20,12 @@ unsigned long visibility_err_sample_count = 0;
 
 float avg_flicker = 0.0;
 float flicker_sign_ = 0.0;
+float flicker_sum = 0.0;
 unsigned long flicker_sample_count = 0;
+float prev_duty_k1 = 0.0f;
+float prev_duty_k2 = 0.0f;
+float prev_ref_flicker = 0.0f;
+bool flicker_initialized = false;
 
 // =====================
 // LUX READING
@@ -79,21 +84,77 @@ void setPWM(float dutyCycle) {
   analogWrite(PWM_PIN, dutyCycle * PWM_MAX);
 }
 
-float compute_avg_flicker(){
-    return 0;
+void reset_flicker_metrics() {
+    avg_flicker = 0.0f;
+    flicker_sign_ = 0.0f;
+    flicker_sum = 0.0f;
+    flicker_sample_count = 0;
+    prev_duty_k1 = 0.0f;
+    prev_duty_k2 = 0.0f;
+    prev_ref_flicker = 0.0f;
+    flicker_initialized = false;
+}
+
+float compute_avg_flicker(float dutyCycle, float referenceLux){
+    if (!flicker_initialized) {
+        prev_duty_k2 = dutyCycle;
+        prev_duty_k1 = dutyCycle;
+        prev_ref_flicker = referenceLux;
+        flicker_initialized = true;
+        return 0.0f;
+    }
+
+    // Exclude transient periods caused by explicit reference changes.
+    if (referenceLux != prev_ref_flicker) {
+        prev_ref_flicker = referenceLux;
+        prev_duty_k2 = dutyCycle;
+        prev_duty_k1 = dutyCycle;
+        return avg_flicker;
+    }
+
+    float delta_k = dutyCycle - prev_duty_k1;
+    float delta_km1 = prev_duty_k1 - prev_duty_k2;
+
+    float f_k = 0.0f;
+    if ((delta_k * delta_km1) < 0.0f) {
+        f_k = fabs(delta_k) + fabs(delta_km1);
+    }
+
+    flicker_sign_ = f_k;
+    flicker_sum += f_k;
+    flicker_sample_count++;
+    avg_flicker = flicker_sum / static_cast<float>(flicker_sample_count);
+
+    prev_duty_k2 = prev_duty_k1;
+    prev_duty_k1 = dutyCycle;
+    return avg_flicker;
 }
 
 float compute_avg_energy(){
     return 0;
 }
 
-float compute_avg_visibility_err(){
-    return 0;
+
+float compute_avg_visibility_err(float referenceLux, float measuredLux){
+    float visibilityError = referenceLux - measuredLux;
+    if (visibilityError < 0.0f) {
+        visibilityError = 0.0f;
+    }
+
+    visibility_err_sum += visibilityError;
+    visibility_err_sample_count++;
+    avg_visibility_err = visibility_err_sum / visibility_err_sample_count;
+    return avg_visibility_err;
 }
 
 float getInstantPower() {
-  // Placeholder for actual power computation logic
-  return 0;
+    float instantPower = 0.0f;
+
+    critical_section_enter_blocking(&gStateLock);
+    instantPower = gOutputs.instantPower;
+    critical_section_exit(&gStateLock);
+
+    return instantPower;
 }
 
 // =====================

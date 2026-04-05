@@ -99,6 +99,26 @@ static bool buildCommandFromSerialType(const CANSerialMsgType type, const CANDec
             cmd.mainCmd = "g";
             cmd.subCmd = "d";
             return true;
+        case CAN_MSG_GET_AVG_VIS_ERROR:
+            cmd.mainCmd = "g";
+            cmd.subCmd = "V";
+            return true;
+        case CAN_MSG_GET_AVG_FLICKER:
+            cmd.mainCmd = "g";
+            cmd.subCmd = "F";
+            return true;
+        case CAN_MSG_GET_AVG_ENERGY:
+            cmd.mainCmd = "g";
+            cmd.subCmd = "E";
+            return true;
+        case CAN_MSG_GET_ENERGY_COST:
+            cmd.mainCmd = "g";
+            cmd.subCmd = "C";
+            return true;
+        case CAN_MSG_GET_INST_POWER:
+            cmd.mainCmd = "g";
+            cmd.subCmd = "p";
+            return true;
         case CAN_MSG_SET_REF_BOUND_HIGH:
             cmd.mainCmd = "O";
             cmd.value = unpackFloatPayload(frame);
@@ -193,7 +213,7 @@ canid_t encodeID(uint8_t type, uint8_t srcID, uint8_t dstID, uint8_t msgType){
     return (id & CAN_SFF_MASK) & ~(CAN_EFF_FLAG | CAN_RTR_FLAG | CAN_ERR_FLAG);
 }
 
-bool decodeID(canid_t canID, CANDecodedID& out) {
+bool decodeID(canid_t canID, CANDecodedID& out) { 
     if ((canID & (CAN_EFF_FLAG | CAN_RTR_FLAG | CAN_ERR_FLAG)) != 0) {
         return false;
     }
@@ -258,7 +278,12 @@ static bool isGetMsgType(uint8_t msgType) {
            msgType == CAN_MSG_GET_ELAPSED_TIME ||
            msgType == CAN_MSG_GET_REF_BOUND_HIGH ||
            msgType == CAN_MSG_GET_REF_BOUND_LOW ||
-           msgType == CAN_MSG_GET_CURR_REF_BOUND;
+           msgType == CAN_MSG_GET_CURR_REF_BOUND ||
+           msgType == CAN_MSG_GET_AVG_VIS_ERROR ||
+           msgType == CAN_MSG_GET_AVG_FLICKER ||
+           msgType == CAN_MSG_GET_AVG_ENERGY ||
+           msgType == CAN_MSG_GET_ENERGY_COST ||
+           msgType == CAN_MSG_GET_INST_POWER;
 }
 
 static void processFrame(const can_frame& frm) {
@@ -348,6 +373,31 @@ static void processFrame(const can_frame& frm) {
                     Serial.println(unpackFloatPayload(frm));
                 } else if (receivedFrame.msgType == CAN_MSG_GET_CURR_REF_BOUND) {
                     Serial.print("L ");
+                    Serial.print(receivedFrame.srcID);
+                    Serial.print(" ");
+                    Serial.println(unpackFloatPayload(frm));
+                } else if (receivedFrame.msgType == CAN_MSG_GET_ENERGY_COST) {
+                    Serial.print("C ");
+                    Serial.print(receivedFrame.srcID);
+                    Serial.print(" ");
+                    Serial.println(unpackFloatPayload(frm));
+                } else if (receivedFrame.msgType == CAN_MSG_GET_AVG_VIS_ERROR) {
+                    Serial.print("V ");
+                    Serial.print(receivedFrame.srcID);
+                    Serial.print(" ");
+                    Serial.println(unpackFloatPayload(frm));
+                } else if (receivedFrame.msgType == CAN_MSG_GET_AVG_FLICKER) {
+                    Serial.print("F ");
+                    Serial.print(receivedFrame.srcID);
+                    Serial.print(" ");
+                    Serial.println(unpackFloatPayload(frm));
+                } else if (receivedFrame.msgType == CAN_MSG_GET_AVG_ENERGY) {
+                    Serial.print("E ");
+                    Serial.print(receivedFrame.srcID);
+                    Serial.print(" ");
+                    Serial.println(unpackFloatPayload(frm));
+                } else if (receivedFrame.msgType == CAN_MSG_GET_INST_POWER) {
+                    Serial.print("p ");
                     Serial.print(receivedFrame.srcID);
                     Serial.print(" ");
                     Serial.println(unpackFloatPayload(frm));
