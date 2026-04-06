@@ -7,6 +7,18 @@ volatile PendingCommands gPending = {};
 critical_section_t gStateLock;
 bool waiting_can = false;
 
+float measuredLux0[10];
+float measuredLux1[10];
+float measuredLux2[10];
+
+bool calibrating = false;
+int calibrating_luminaireId=0;
+
 void initSharedState() {
   critical_section_init(&gStateLock);
 }
+
+
+
+
+

@@ -84,7 +84,7 @@ void setup() {
 void loop() {
   unsigned long now = millis();
   
-  if (now - lastTimePID >= 10) { // 10ms control period
+  if (!calibrating && now - lastTimePID >= 10) { // 10ms control period
     unsigned long elapsedMs = now - lastTimePID;
     lastTimePID = now;
     applyPendingCommands();
@@ -155,7 +155,6 @@ void setup1() {
 
 void loop1() {
   unsigned long now = millis();
-
   if (got_irq){
     got_irq = false; // Reset flag
     // Process CAN message
@@ -163,40 +162,28 @@ void loop1() {
     can0.clearRXnOVRFlags();  
     can0.clearInterrupts();
   }
-
   if (Serial.available() > 0) {
     handleSerial();
   }
+  if (calibrating!=true)
+  {
+    if (now - lastTimeStream >= 100) {
+      lastTimeStream = now;
+      print_to_serial();
+    }
 
-  if (now - lastTimeStream >= 100) {
-    lastTimeStream = now;
-    print_to_serial();
+    if (now - lastTimePWM >= 5) { // 20ms CAN update
+      lastTimePWM = now;
+      // Send PWM value over CAN
+      critical_section_enter_blocking(&gStateLock);
+      float dutyToSend = gOutputs.duty;
+      critical_section_exit(&gStateLock);
+      encode_and_send(INTERNAL,_luminaireId,0,CAN_MSG_PWM,dutyToSend);
+    }
   }
-
-  if (now - lastTimePWM >= 5) { // 20ms CAN update
-    lastTimePWM = now;
-    // Send PWM value over CAN
-    critical_section_enter_blocking(&gStateLock);
-    float dutyToSend = gOutputs.duty;
-    critical_section_exit(&gStateLock);
-    encode_and_send(INTERNAL,_luminaireId,0,0,dutyToSend);
   
-    /*
-    uint8_t eflags = can0.getErrorFlags();
-    uint8_t TEC = can0.errorCountTX();
-    uint8_t REC = can0.errorCountRX();
 
-    uint8_t irq = can0.getInterrupts();
-    uint8_t err = can0.getErrorFlags();
-    
-    
-    Serial.print("EFLG: ");
-    Serial.println(eflags, BIN);
-    Serial.print("TEC: ");
-    Serial.println(TEC);
-    Serial.print("REC: ");
-    Serial.println(REC);
-    Serial.println("---");
-    */
-  }
+
+  
 }
+

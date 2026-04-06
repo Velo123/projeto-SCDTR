@@ -1,6 +1,4 @@
 #include "canv2.h"
-#include "serial.h"
-#include <string.h>
 
 MCP2515 can0 {spi0, 17, 19, 16, 18, 10000000};
 
@@ -314,12 +312,19 @@ static void processFrame(const can_frame& frm) {
     //"callback" function to msg type
     if (receivedFrame.type == INTERNAL) {   //update pwms of other luminaires
         //check src id and update pwm
-        if (receivedFrame.srcID < 4 && receivedFrame.srcID >=0 && receivedFrame.srcID != _luminaireId)
+        if (receivedFrame.msgType==CAN_MSG_PWM)
         {
-            gPending.haspwm = true;
-            gPending.newpwm[receivedFrame.srcID] = unpackFloatPayload(frm);
-            return;
+            if (receivedFrame.srcID < 4 && receivedFrame.srcID >=0 && receivedFrame.srcID != _luminaireId){
+                gPending.haspwm = true;
+                gPending.newpwm[receivedFrame.srcID] = unpackFloatPayload(frm);
+                return;
+            }
         }
+        else if (receivedFrame.msgType == CAN_MSG_CALIBRATION)
+        {
+            updateCalibration(receivedFrame.srcID, unpackFloatPayload(frm));
+        }
+        
     }
     else if (receivedFrame.type == FSERIAL) {
         //check if serial command in can is for me or other luminaire, if for me execute, if for other luminaire forward
