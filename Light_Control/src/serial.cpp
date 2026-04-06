@@ -29,6 +29,10 @@ static bool mapCommandToCanMsgType(const Command& cmd, uint8_t& outMsgType) {
     outMsgType = CAN_MSG_SET_REF_BOUND_LOW;
     return true;
   }
+  if (cmd.mainCmd == "C") {
+    outMsgType = CAN_MSG_SET_ENERGY_COST;
+    return true;
+  }
   if (cmd.mainCmd == "R") {
     outMsgType = CAN_MSG_RESTART;
     return true;
@@ -91,6 +95,22 @@ static bool mapCommandToCanMsgType(const Command& cmd, uint8_t& outMsgType) {
       outMsgType = CAN_MSG_GET_EXT_ILLUM;
       return true;
     }
+    if (cmd.subCmd == "V") {
+      outMsgType = CAN_MSG_GET_AVG_VIS_ERROR;
+      return true;
+    }
+    if (cmd.subCmd == "F") {
+      outMsgType = CAN_MSG_GET_AVG_FLICKER;
+      return true;
+    }
+    if (cmd.subCmd == "E") {
+      outMsgType = CAN_MSG_GET_AVG_ENERGY;
+      return true;
+    }
+    if (cmd.subCmd == "p") {
+      outMsgType = CAN_MSG_GET_INST_POWER;
+      return true;
+    }
   }
 
   return false;
@@ -108,6 +128,7 @@ static void resetControllerStateToDefaults() {
   gInputs.pwm[0] = 0.0f;
   gInputs.pwm[1] = 0.0f;
   gInputs.pwm[2] = 0.0f;
+  gOutputs.energyCost = 0.0f;
   gInputs.refOccupied = 20.0f;
   gInputs.refLow = 20.0f;
   gInputs.refHigh = 20.0f;
@@ -118,6 +139,10 @@ static void resetControllerStateToDefaults() {
   gOutputs.luxMeasured = 0.0f;
   gOutputs.ldrVoltage = 0.0f;
   gOutputs.ldrResistance = 0.0f;
+  gOutputs.instantPower = 0.0f;
+  gOutputs.accumulatedEnergy = 0.0f;
+  gOutputs.averageVisibilityError = 0.0f;
+  gOutputs.averageFlicker = 0.0f;
 
   memset((void*)&gHistory, 0, sizeof(gHistory));
   memset((void*)&gPending, 0, sizeof(gPending));
@@ -126,6 +151,7 @@ static void resetControllerStateToDefaults() {
 
   controller.reset();
   setPWM(0.0f);
+  reset_flicker_metrics();
 }
 
 // Helper function to send GET command responses (via Serial or CAN)
@@ -307,11 +333,6 @@ void handleSerial() {
 
   if (input.length() > 0) {
     Command cmd = parseCommand(input);
-
-    // Local-only command: print PWM values received from other nodes.
-    if (cmd.mainCmd == "g" && cmd.subCmd == "p") {
-      cmd.luminaireId = _luminaireId;
-    }
 
     if (cmd.mainCmd == "R" && cmd.luminaireId < 0) {
       // Allow plain "R" to target the local luminaire.
@@ -531,6 +552,42 @@ void executeCommand(Command cmd) {
       sendGetResponse(cmd, externalLuminance);
     }
 
+    else if (cmd.subCmd == "V") {
+      // Get average visibility error since restart: g V <i>
+      float averageVisibilityError;
+      critical_section_enter_blocking(&gStateLock);
+      averageVisibilityError = gOutputs.averageVisibilityError;
+      critical_section_exit(&gStateLock);
+      sendGetResponse(cmd, averageVisibilityError);
+    }
+
+    else if (cmd.subCmd == "F") {
+      // Get average flicker error since restart: g F <i>
+      float averageFlicker;
+      critical_section_enter_blocking(&gStateLock);
+      averageFlicker = gOutputs.averageFlicker;
+      critical_section_exit(&gStateLock);
+      sendGetResponse(cmd, averageFlicker);
+    }
+
+    else if (cmd.subCmd == "C") {
+      // Get current energy cost: g C <i>
+      float energyCost;
+      critical_section_enter_blocking(&gStateLock);
+      energyCost = gOutputs.energyCost;
+      critical_section_exit(&gStateLock);
+      sendGetResponse(cmd, energyCost);
+    }
+
+    else if (cmd.subCmd == "E") {
+      // Get accumulated energy since restart: g E <i>
+      float accumulatedEnergy;
+      critical_section_enter_blocking(&gStateLock);
+      accumulatedEnergy = gOutputs.accumulatedEnergy;
+      critical_section_exit(&gStateLock);
+      sendGetResponse(cmd, accumulatedEnergy);
+    }
+
     else if (cmd.subCmd == "b") {
       // Get last minute buffer: g b <x> <i>, x in {'y','u'}.
       if (cmd.charValue == 'y' || cmd.charValue == 'u') {
@@ -591,10 +648,20 @@ void executeCommand(Command cmd) {
     }
 
     else if (cmd.subCmd == "p") {
-      // Local command: print received PWM values from other luminaires.
-      //printExternalPwm();
-      float pwr=getInstantPower();
-      sendGetResponse(cmd, pwr); // Just send an ACK for this local command since it doesn't have a single numeric response
+      // Get instantaneous power consumption: g p <i>
+      float pwr = getInstantPower();
+      sendGetResponse(cmd, pwr);
+    }
+  }
+  else if (cmd.mainCmd == "C") {
+    // Set current energy cost: C <i> <val>
+    if (cmd.luminaireId < 3 && cmd.value >= 0.0f) {
+      critical_section_enter_blocking(&gStateLock);
+      gOutputs.energyCost = cmd.value;
+      critical_section_exit(&gStateLock);
+      sendCommandResponse(cmd, true);
+    } else {
+      sendCommandResponse(cmd, false);
     }
   }
   // SET commands

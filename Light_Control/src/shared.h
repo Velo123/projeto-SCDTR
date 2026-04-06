@@ -20,6 +20,11 @@ struct ControlOutputs {
   float luxMeasured;
   float ldrVoltage;
   float ldrResistance;
+  float energyCost;
+  float instantPower;
+  float accumulatedEnergy;
+  float averageVisibilityError;
+  float averageFlicker;
 };
 
 // 60 s history with 10 ms sampling period -> 6000 samples.

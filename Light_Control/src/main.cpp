@@ -85,6 +85,7 @@ void loop() {
   unsigned long now = millis();
   
   if (now - lastTimePID >= 10) { // 10ms control period
+    unsigned long elapsedMs = now - lastTimePID;
     lastTimePID = now;
     applyPendingCommands();
 
@@ -100,6 +101,11 @@ void loop() {
 
     float ldrVoltage = getavgvoltage(adcAvg);
     float ldrResistance = getLDRresistance(ldrVoltage);
+    constexpr float MAX_DESK_POWER_W = 0.096f; // 96 mW at 100% duty cycle
+    float instantPower = duty * MAX_DESK_POWER_W;
+    float accumulatedEnergy = gOutputs.accumulatedEnergy + instantPower * (static_cast<float>(elapsedMs) / 1000.0f);
+    float averageVisibilityError = compute_avg_visibility_err(gInputs.referenceLux, lux);
+    float averageFlicker = compute_avg_flicker(duty, gInputs.referenceLux);
 
     critical_section_enter_blocking(&gStateLock);
     gOutputs.timestampMs = now;
@@ -107,6 +113,10 @@ void loop() {
     gOutputs.luxMeasured = lux;
     gOutputs.ldrVoltage = ldrVoltage;
     gOutputs.ldrResistance = ldrResistance;
+    gOutputs.instantPower = instantPower;
+    gOutputs.accumulatedEnergy = accumulatedEnergy;
+    gOutputs.averageVisibilityError = averageVisibilityError;
+    gOutputs.averageFlicker = averageFlicker;
 
     // Store last-minute history in a circular buffer.
     gHistory.timestampMs[gHistory.head] = now;

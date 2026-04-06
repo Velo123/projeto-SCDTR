@@ -23,9 +23,10 @@ float getLDRresistance(float v_out);
 float getavglux(float ADCavg);
 void setPWM(float dutyCycle);
 
-float compute_avg_flicker();
+float compute_avg_flicker(float dutyCycle, float referenceLux);
+void reset_flicker_metrics();
 float compute_avg_energy();
-float compute_avg_visibility_err();
+float compute_avg_visibility_err(float referenceLux, float measuredLux);
 float getInstantPower();
 
 // =====================
