@@ -1,6 +1,6 @@
 #include "shared.h"
 
-volatile ControlInputs gInputs = {20.0f, 'o', true, true, false, {-1.0f, -1.0f, -1.0f}, 20.0f, 20.0f, 20.0f,{0.0f, 0.0f, 0.0f}};
+volatile ControlInputs gInputs = {20.0f, 'o', true, true, false, {0.0f, 0.0f, 0.0f}, 20.0f, 20.0f, 20.0f,{0.0f, 0.0f, 0.0f}};
 volatile ControlOutputs gOutputs = {0, 0.0f, 0.0f, 0.0f, 0.0f};
 volatile HistoryBuffers gHistory = {{0}, {0.0f}, {0.0f}, 0, 0};
 volatile PendingCommands gPending = {};

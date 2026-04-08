@@ -119,8 +119,8 @@ for target in rpi0 rpi1 rpi2; do
   fi
 done
 
-echo "[1/3] Programar rpi0, rpi1, rpi2"
-for target in rpi0 rpi1 rpi2; do
+echo "[1/3] Programar rpi1, rpi2, rpi0"
+for target in rpi1 rpi2 rpi0; do
   env_name="${PIO_ENVS[$target]}"
 
   echo "A detetar porta de $target (ID ${EFFECTIVE_USB_IDS[$target]})..."

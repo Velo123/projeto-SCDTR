@@ -171,16 +171,16 @@ float calibrateSystem(const float* measuredLux) {
     float sumY = 0.0f;
     float sumXY = 0.0f;
     float sumX2 = 0.0f;
-
-    Serial.println("Calibration data points:");
-    Serial.println("PWM, Lux");
-    Serial.println("----------------");
-    for (int i = 1; i < 10; i++)
+    if (debug)
     {
-        Serial.print(0.1f * (i + 1)); Serial.print(", "); Serial.println(measuredLux[i]);
-    }
-    
-
+        Serial.println("Calibration data points:");
+        Serial.println("PWM, Lux");
+        Serial.println("----------------");
+         for (int i = 1; i < 10; i++)
+        {
+            Serial.print(0.1f * (i + 1)); Serial.print(", "); Serial.println(measuredLux[i]);
+        }
+    } 
 
     for (int i = 1; i < numPoints; ++i) {
       const float pwm = 0.1f * (i + 1);  // 0.1, 0.2, ..., 1.0
@@ -201,13 +201,16 @@ float calibrateSystem(const float* measuredLux) {
     } else {
         slope = 0.0f; // Fallback if points are collinear or too close
     }
-    Serial.print("Calibration complete for luminaire ");Serial.print(_luminaireId);
-    Serial.print(": computed gain = ");Serial.println(slope);
+    critical_section_enter_blocking(&gStateLock);
+    int targetLuminaireId = calibrating_luminaireId;
+    critical_section_exit(&gStateLock);
+    Serial.print(" Gain of luminaire ");Serial.print(targetLuminaireId);Serial.print(" in luminaire ");
+    Serial.print(_luminaireId);Serial.print(": ");Serial.println(slope);
 
-    if (slope>7 || slope<=0.0f)
+    /*if (slope>7 || slope<=0.0f)
     {
         slope = measuredLux[9]; // Fallback to max lux if slope is unrealistically high, indicating potential measurement error
-    }
+    }*/
     
 
    return slope;

@@ -1,9 +1,5 @@
 
 #pragma once
-
-
-
-
 // Build-time role selection:
 // -Drpi1 enables RPI 1 specific code paths.
 // -Drpi2 enables RPI 2 specific code paths.
@@ -77,16 +73,16 @@
 
 #if IS_RPI_1
     #define debugger_can 0
-    #define debugger_coms 1
-    #define debug 1
+    #define debugger_coms 0
+    #define debug 0
 #elif IS_RPI_2
     #define debugger_can 0
-    #define debugger_coms 1
-    #define debug 1
+    #define debugger_coms 0
+    #define debug 0
 #elif IS_RPI_3
     #define debugger_can 0
-    #define debugger_coms 1
-    #define debug 1
+    #define debugger_coms 0
+    #define debug 0
 #else
     #define debugger_can 1
     #define debugger_coms 1
