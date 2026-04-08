@@ -206,7 +206,7 @@ float PID::compute(float reference, float measurement) {
 
     if (!FBon) {
         // modo feedforward (apenas ação proporcional ao setpoint) 
-        float output = Kff * reference - external_lux_compensation; // feedforward puro
+        float output = reference/Kff;// - getPWMcompensation(); // feedforward controller
         // saturação
         if (output > outputMax) output = outputMax;
         if (output < outputMin) output = outputMin;
@@ -215,8 +215,8 @@ float PID::compute(float reference, float measurement) {
 
     // modo feedback (PID completo)
     float error = reference - measurement;
-    
-    float P = Kp * (reference - measurement);
+    //Serial.print("Reference: "); Serial.print(reference); Serial.print(" Measured: "); Serial.print(measurement); Serial.print(" Compensation: "); Serial.println(external_lux_compensation);
+    float P = Kp * (reference - measurement-external_lux_compensation); // considerando ganho das outras luminárias como perturbação
     float D = Kd * ((reference - measurement) - (previousReference - previousMeasurement)) / Ts;
 
     if (AWon) {
@@ -229,7 +229,7 @@ float PID::compute(float reference, float measurement) {
         integrator += Ki * Ts * error;
     }
 
-    float output = (P + integrator + D) - getPWMcompensation(); // considerando ganho das outras luminárias como perturbação
+    float output = (P + integrator + D); // considerando ganho das outras luminárias como perturbação
 
     // saturação
     if (output > outputMax) output = outputMax;

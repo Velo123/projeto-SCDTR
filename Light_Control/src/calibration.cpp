@@ -39,12 +39,9 @@ void calibrate() {
     getavglux(getMovingAverageADC());
     setPWM(0.0f);
     encode_and_send(INTERNAL, _luminaireId, 0, CAN_MSG_CALIBRATION, 0);
-    if (_luminaireId==0) {
-        delay(5000); // Extra delay at 0% to allow for sensor stabilization without light output
-    }
     delay(3000); // Wait for any ongoing operations to settle in core 0 before starting calibration
     
-    for (int i = 1; i < 11; ++i) {
+    for (int i = 0; i < 11; ++i) {
         Serial.print("Setting PWM to "); Serial.print(i * 10); Serial.println("%");
         setPWM(i/10.0f);
         getavglux(getMovingAverageADC());
@@ -123,6 +120,10 @@ void updateCalibration(float src, float pwm) {
         calibrate(); // Start calibration if not already calibrating and this is the first luminaire
     }
 
+    if (pwmval < 1 || pwmval > 10) {
+        return;
+    }
+
     if(srcId == 0){
         measuredLux0[pwmval-1] = getavglux(getMovingAverageADC());
     }else if(srcId == 1){
@@ -151,6 +152,7 @@ void updateCalibration(float src, float pwm) {
         if(calibrating_luminaireId>MAXID){
             calibrating_luminaireId=0; // Reset for potential future calibrations
             calibrating = false; // Clear calibrating flag after all luminaires have been calibrated
+            startupCalibrationPending = false;
         }else if(calibrating_luminaireId==_luminaireId){
             critical_section_exit(&gStateLock);
             calibrate(); // Start calibration for the next luminaire
@@ -164,7 +166,7 @@ void updateCalibration(float src, float pwm) {
 
 float calibrateSystem(const float* measuredLux) {
 
-    const int numPoints = 10;
+    const int numPoints = 9;
     float sumX = 0.0f;
     float sumY = 0.0f;
     float sumXY = 0.0f;
@@ -173,14 +175,14 @@ float calibrateSystem(const float* measuredLux) {
     Serial.println("Calibration data points:");
     Serial.println("PWM, Lux");
     Serial.println("----------------");
-    for (int i = 0; i < 10; i++)
+    for (int i = 1; i < 10; i++)
     {
         Serial.print(0.1f * (i + 1)); Serial.print(", "); Serial.println(measuredLux[i]);
     }
     
 
 
-    for (int i = 0; i < numPoints; ++i) {
+    for (int i = 1; i < numPoints; ++i) {
       const float pwm = 0.1f * (i + 1);  // 0.1, 0.2, ..., 1.0
       const float lux = measuredLux[i];
 

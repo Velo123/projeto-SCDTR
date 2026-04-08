@@ -35,11 +35,11 @@
 // Intercept of log-log curve (from calibration).
 // Can be overridden from build flags, e.g. -DB_VALUE=6.25
 #ifndef B_VALUE
-	#if IS_RPI_1
+	#if IS_RPI_3
 		#define B_VALUE 6.10
     #elif IS_RPI_2
         #define B_VALUE 5.839462
-	#elif IS_RPI_3
+	#elif IS_RPI_1
         #define B_VALUE 6.331
     #else
 		#define B_VALUE 6
@@ -47,11 +47,11 @@
 #endif
 
 #ifndef M_VALUE
-	#if IS_RPI_1
+	#if IS_RPI_3
         #define M_VALUE -0.8
     #elif IS_RPI_2
         #define M_VALUE -0.8
-	#elif IS_RPI_3
+	#elif IS_RPI_1
         #define M_VALUE -0.728
     #else
         #define M_VALUE -0.8
