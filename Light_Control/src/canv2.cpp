@@ -330,9 +330,10 @@ static void processFrame(const can_frame& frm) {
         if (receivedFrame.msgType==CAN_MSG_PWM)
         {
             if (receivedFrame.srcID < 4 && receivedFrame.srcID >=0 && receivedFrame.srcID != _luminaireId){
-                //Serial.print("Received PWM update for luminaire ");Serial.print(receivedFrame.srcID); Serial.print(": "); Serial.println(unpackFloatPayload(frm));
-                gPending.haspwm = true;
-                gPending.newpwm[receivedFrame.srcID] = unpackFloatPayload(frm);
+                // Apply per-source PWM immediately to avoid overwriting unknown peers with stale pending values.
+                critical_section_enter_blocking(&gStateLock);
+                gInputs.pwm[receivedFrame.srcID] = unpackFloatPayload(frm);
+                critical_section_exit(&gStateLock);
                 return;
             }
         }

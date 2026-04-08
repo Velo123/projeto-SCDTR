@@ -80,13 +80,29 @@ void setup() {
   analogReadResolution(12);
   pinMode(PWM_PIN, OUTPUT);
   analogWrite(PWM_PIN, 0);
+  if (_luminaireId == 0) {
+    critical_section_enter_blocking(&gStateLock);
+    gInputs.pwm[1] = -1.0f;
+    gInputs.pwm[2] = -1.0f;
+    critical_section_exit(&gStateLock);
+  }
 }
 
 void loop() {
   unsigned long now = millis();
   critical_section_enter_blocking(&gStateLock);
   const bool calibrationActive = calibrating;
+  const bool startupPending = startupCalibrationPending;
   critical_section_exit(&gStateLock);
+
+  if (_luminaireId != 0 && startupPending) {
+    setPWM(0.0f);
+    critical_section_enter_blocking(&gStateLock);
+    gOutputs.duty = 0.0f;
+    critical_section_exit(&gStateLock);
+    addSampleToBufferADC();
+    return;
+  }
 
   if (!calibrationActive && now - lastTimePID >= 10) { // 10ms control period
     lastTimePID = now;

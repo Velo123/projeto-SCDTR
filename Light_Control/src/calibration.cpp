@@ -36,22 +36,31 @@ void calibrate() {
     }
 
     Serial.print("Starting calibration for luminaire ");Serial.print(targetLuminaireId);Serial.println("...");
-    readStableLux(200, 2, 2);
+    getavglux(getMovingAverageADC());
+    setPWM(0.0f);
+    encode_and_send(INTERNAL, _luminaireId, 0, CAN_MSG_CALIBRATION, 0);
+    if (_luminaireId==0) {
+        delay(5000); // Extra delay at 0% to allow for sensor stabilization without light output
+    }
     delay(3000); // Wait for any ongoing operations to settle in core 0 before starting calibration
     
-    for (int i = 0; i < 11; ++i) {
+    for (int i = 1; i < 11; ++i) {
+        Serial.print("Setting PWM to "); Serial.print(i * 10); Serial.println("%");
         setPWM(i/10.0f);
-        readStableLux(250, 3, 3);
+        getavglux(getMovingAverageADC());
         delay(1000);
         encode_and_send(INTERNAL, _luminaireId, 0, CAN_MSG_CALIBRATION, i/10.0f);
         delay(1000);
-        if(i==0){continue;} // Skip reading lux at 0% duty cycle to avoid log(0) issues in gain calculation
+        if(i==0){
+            delay(1000); // Extra delay at 0% to allow for sensor stabilization without light output
+            continue;
+        } // Skip reading lux at 0% duty cycle to avoid log(0) issues in gain calculation
         if (_luminaireId==0) {
-            measuredLux0[i-1] = readStableLux();
+            measuredLux0[i-1] = getavglux(getMovingAverageADC());
         }else if (_luminaireId==1) {
-            measuredLux1[i-1] = readStableLux();
+            measuredLux1[i-1] = getavglux(getMovingAverageADC());
         }else if (_luminaireId==2) {
-            measuredLux2[i-1] = readStableLux();
+            measuredLux2[i-1] = getavglux(getMovingAverageADC());
         }
     }
     // Ensure local gain computation does not depend on CAN self-reception.
@@ -70,6 +79,16 @@ void updateCalibration(float src, float pwm) {
     const int srcId = static_cast<int>(src);
     if (srcId < 0 || srcId > MAXID) {
         return;
+    }
+    int pwmval = static_cast<int>(lroundf(pwm * 10.0f)) ;
+
+
+    // Start of another luminaire calibration: keep local LED off and only sample lux on next steps.
+    if (srcId != _luminaireId) {
+        setPWM(0.0f);
+        critical_section_enter_blocking(&gStateLock);
+        gOutputs.duty = 0.0f;
+        critical_section_exit(&gStateLock);
     }
 
     bool shouldStartCalibration = false;
@@ -104,26 +123,15 @@ void updateCalibration(float src, float pwm) {
         calibrate(); // Start calibration if not already calibrating and this is the first luminaire
     }
 
-    if (pwm == 0.0f){
-        // Start of another luminaire calibration: keep local LED off and only sample lux on next steps.
-        if (static_cast<int>(src) != _luminaireId) {
-            setPWM(0.0f);
-            critical_section_enter_blocking(&gStateLock);
-            gOutputs.duty = 0.0f;
-            critical_section_exit(&gStateLock);
-        }
-        return;
-    }
-    
-    if(src == 0){
-        measuredLux0[int(pwm*10)-1] = readStableLux();
-    }else if(src == 1){
-        measuredLux1[int(pwm*10)-1] = readStableLux();
-    }else if(src == 2){
-        measuredLux2[int(pwm*10)-1] = readStableLux();
+    if(srcId == 0){
+        measuredLux0[pwmval-1] = getavglux(getMovingAverageADC());
+    }else if(srcId == 1){
+        measuredLux1[pwmval-1] = getavglux(getMovingAverageADC());
+    }else if(srcId == 2){
+        measuredLux2[pwmval-1] = getavglux(getMovingAverageADC());
     }
 
-    if (pwm==1){
+    if (pwmval==10){
         float slope = 0.0f;
 
         if (srcId == 0) {
@@ -193,6 +201,12 @@ float calibrateSystem(const float* measuredLux) {
     }
     Serial.print("Calibration complete for luminaire ");Serial.print(_luminaireId);
     Serial.print(": computed gain = ");Serial.println(slope);
+
+    if (slope>7 || slope<=0.0f)
+    {
+        slope = measuredLux[9]; // Fallback to max lux if slope is unrealistically high, indicating potential measurement error
+    }
+    
 
    return slope;
 }
