@@ -193,14 +193,20 @@ canid_t encodeID(uint8_t type, uint8_t srcID, uint8_t dstID, uint8_t msgType){
     id |= (static_cast<canid_t>(type)  << CAN_PRIORITY_SHIFT) & CAN_PRIORITY_MASK;
     id |= (static_cast<canid_t>(srcID) << CAN_SRC_SHIFT) & CAN_SRC_MASK;
 
+    if (msgType > CAN_MSG_TYPE_MASK) {
+        return 0;
+    }
+
     if (type == FSERIAL) {
-        if (dstID > (CAN_DST_MASK >> CAN_DST_SHIFT) || msgType > CAN_MSG_TYPE_MASK) {
+        if (dstID > (CAN_DST_MASK >> CAN_DST_SHIFT)) {
             return 0;
         }
 
         id |= (static_cast<canid_t>(dstID)   << CAN_DST_SHIFT) & CAN_DST_MASK;
-        id |= (static_cast<canid_t>(msgType) << CAN_MSG_TYPE_SHIFT) & CAN_MSG_TYPE_MASK;
     }
+
+    // INTERNAL and FSERIAL both carry msgType in bits 5..0.
+    id |= (static_cast<canid_t>(msgType) << CAN_MSG_TYPE_SHIFT) & CAN_MSG_TYPE_MASK;
 
     // Return 32-bit canid_t with standard 11-bit identifier.
     // Bits 0-10: CAN identifier (11 bits)
@@ -222,23 +228,32 @@ bool decodeID(canid_t canID, CANDecodedID& out) {
     out.srcID = static_cast<uint8_t>((id & CAN_SRC_MASK) >> CAN_SRC_SHIFT);
 
     if (out.type != INTERNAL && out.type != FSERIAL) {
+        Serial.print("Invalid type in CAN ID: ");
+        Serial.println(out.type);
         return false;
     }
 
     if (out.srcID > (CAN_SRC_MASK >> CAN_SRC_SHIFT)) {
+        Serial.print("Invalid srcID in CAN ID: ");
+        Serial.println(out.srcID);
+        return false;
+    }
+
+    out.msgType = static_cast<uint8_t>((id & CAN_MSG_TYPE_MASK) >> CAN_MSG_TYPE_SHIFT);
+    if (out.msgType > CAN_MSG_TYPE_MASK) {
+        Serial.print("Invalid msgType in CAN ID: ");
+        Serial.println(out.msgType);
         return false;
     }
 
     if (out.type == FSERIAL) {
         out.dstID = static_cast<uint8_t>((id & CAN_DST_MASK) >> CAN_DST_SHIFT);
-        out.msgType = static_cast<uint8_t>((id & CAN_MSG_TYPE_MASK) >> CAN_MSG_TYPE_SHIFT);
 
-        if (out.dstID > (CAN_DST_MASK >> CAN_DST_SHIFT) || out.msgType > CAN_MSG_TYPE_MASK) {
+        if (out.dstID > (CAN_DST_MASK >> CAN_DST_SHIFT)) {
+            Serial.print("Invalid dstID in CAN ID: ");
+            Serial.println(out.dstID);
             return false;
         }
-    } else {
-        out.dstID = 0;
-        out.msgType = 0;
     }
 
     return true;
@@ -315,6 +330,7 @@ static void processFrame(const can_frame& frm) {
         if (receivedFrame.msgType==CAN_MSG_PWM)
         {
             if (receivedFrame.srcID < 4 && receivedFrame.srcID >=0 && receivedFrame.srcID != _luminaireId){
+                //Serial.print("Received PWM update for luminaire ");Serial.print(receivedFrame.srcID); Serial.print(": "); Serial.println(unpackFloatPayload(frm));
                 gPending.haspwm = true;
                 gPending.newpwm[receivedFrame.srcID] = unpackFloatPayload(frm);
                 return;
@@ -403,6 +419,11 @@ static void processFrame(const can_frame& frm) {
                     Serial.println(unpackFloatPayload(frm));
                 } else if (receivedFrame.msgType == CAN_MSG_GET_INST_POWER) {
                     Serial.print("p ");
+                    Serial.print(receivedFrame.srcID);
+                    Serial.print(" ");
+                    Serial.println(unpackFloatPayload(frm));
+                } else if (receivedFrame.msgType == CAN_MSG_GET_EXT_ILLUM) {
+                    Serial.print("d ");
                     Serial.print(receivedFrame.srcID);
                     Serial.print(" ");
                     Serial.println(unpackFloatPayload(frm));

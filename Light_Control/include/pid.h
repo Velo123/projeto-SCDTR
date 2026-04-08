@@ -38,7 +38,6 @@ private:
     float beta, gamma;
     float Kff;
     float Ts;
-    float luminaireGain[3];
 
     float integrator;
     float previousMeasurement;
@@ -74,10 +73,9 @@ public:
     void setsetpointWeighting(float swbeta, float g);
     bool setWeight(Weight weight, float value);
     float getWeight(Weight weight) const;
-    bool setLuminaireGain(uint8_t luminaireId, float gain);
-    float getLuminaireGain(uint8_t luminaireId) const;
     void setModeFeedforward(bool enable);
     void setAntiWindup(bool enable);
+    float getPWMcompensation();
 };
 
 extern PID controller;

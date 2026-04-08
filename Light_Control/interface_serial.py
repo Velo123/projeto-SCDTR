@@ -12,10 +12,12 @@ import threading
 import sys
 import argparse
 import os
+import glob
 
-RPI_PORTS = {
-    "rpi1": "/dev/serial/by-id/usb-Raspberry_Pi_Pico_E66118604B886021-if00",
-    "rpi2": "/dev/serial/by-id/usb-Raspberry_Pi_Pico_E66118604B497921-if00",
+RPI_USB_IDS = {
+    "rpi0": "E66118604B886021",
+    "rpi1": "E66118604B497921",
+    "rpi2": "E66118604B296221",
 }
 
 
@@ -25,8 +27,8 @@ def parse_args():
     )
     parser.add_argument(
         "--rpi",
-        choices=["rpi1", "rpi2"],
-        help="Seleciona automaticamente a porta USB do RPI 1 ou RPI 2",
+            choices=["rpi0", "rpi1", "rpi2"],
+            help="Seleciona automaticamente a porta USB do RPI 0, RPI 1 ou RPI 2",
     )
     parser.add_argument(
         "--port",
@@ -36,21 +38,63 @@ def parse_args():
         "--csv-file",
         help="Caminho do ficheiro CSV para gravar o stream em tempo real",
     )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="Lista portas /dev/serial/by-id detetadas e termina",
+    )
     return parser.parse_args()
+
+
+def list_serial_by_id():
+    entries = sorted(glob.glob("/dev/serial/by-id/*"))
+    if not entries:
+        print("Nenhuma porta em /dev/serial/by-id")
+        return
+    print("Portas em /dev/serial/by-id:")
+    for entry in entries:
+        print(f"  - {entry}")
+
+
+def resolve_rpi_port_by_id(rpi_name):
+    usb_id = RPI_USB_IDS[rpi_name]
+    pattern = f"/dev/serial/by-id/usb-Raspberry_Pi_Pico_{usb_id}*"
+    matches = sorted(glob.glob(pattern))
+    if matches:
+        return matches[0]
+    return None
+
+
+def wait_for_rpi_port(rpi_name, timeout_s=20.0, poll_s=0.2):
+    """Espera a porta do RPI por ID único reaparecer (útil com hubs USB)."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        port = resolve_rpi_port_by_id(rpi_name)
+        if port and os.path.exists(port):
+            return port
+        time.sleep(poll_s)
+    return None
 
 
 def is_stream_csv_line(line):
     parts = [p.strip() for p in line.split(",")]
-    if len(parts) != 4:
+    if len(parts) not in (4, 5):
         return False
     try:
-        float(parts[0])
-        float(parts[1])
-        float(parts[2])
-        float(parts[3])
+        for part in parts:
+            float(part)
         return True
     except ValueError:
         return False
+
+
+def normalize_stream_csv_line(line):
+    parts = [p.strip() for p in line.split(",")]
+    # old: time,luminaire_id,lux_meas,duty_cycle
+    # new: time,luminaire_id,lux_ref,lux_meas,duty_cycle
+    if len(parts) == 4:
+        parts = [parts[0], parts[1], "nan", parts[2], parts[3]]
+    return ",".join(parts)
 
 def find_pico_port():
     """Procura automaticamente a porta do Raspberry Pi Pico."""
@@ -68,7 +112,7 @@ def resolve_port(args):
         return args.port
 
     if args.rpi:
-        selected = RPI_PORTS[args.rpi]
+        selected = resolve_rpi_port_by_id(args.rpi)
         return selected
 
     return find_pico_port()
@@ -86,8 +130,17 @@ def wait_for_port(port_path, timeout_s=12.0, poll_s=0.2):
 def main():
     args = parse_args()
 
+    if args.list:
+        list_serial_by_id()
+        return
+
     # Tenta resolver porta por argumentos e fallback automático
     port = resolve_port(args)
+
+    # Com --rpi, se o dispositivo ainda não estiver presente, espera reaparecer.
+    if args.rpi and not port:
+        print(f"A aguardar porta do {args.rpi} aparecer no hub...")
+        port = wait_for_rpi_port(args.rpi, timeout_s=20.0)
 
     # Quando uma porta específica é pedida, aguarda reaparecer após upload/reset.
     if port and (args.rpi or args.port) and not os.path.exists(port):
@@ -102,6 +155,7 @@ def main():
     if not port:
         if args.rpi:
             print("Porta USB do RPI selecionado não encontrada.")
+            list_serial_by_id()
             return
         print("Porta USB não encontrada automaticamente.")
         port = input("Insira a porta serial (ex: /dev/ttyACM0 ou /dev/ttyUSB0): ")
@@ -149,8 +203,8 @@ def main():
         
         # Abre ficheiro para escrita
         with open(filename, 'w', buffering=1) as f:
-            # Cabeçalho do stream compacto: time,luminaire_id,lux_meas,duty_cycle
-            f.write("time,luminaire_id,lux_meas,duty_cycle\n")
+            # Cabeçalho do stream compacto: time,luminaire_id,lux_ref,lux_meas,duty_cycle
+            f.write("time,luminaire_id,lux_ref,lux_meas,duty_cycle\n")
 
             while running:
                 if ser.in_waiting > 0:
@@ -159,7 +213,7 @@ def main():
                     if line:
                         if is_stream_csv_line(line):
                             # Grava stream para plot sem poluir o terminal.
-                            f.write(line + "\n")
+                            f.write(normalize_stream_csv_line(line) + "\n")
                         else:
                             # Mostra apenas respostas/comandos no terminal.
                             print(line)

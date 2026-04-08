@@ -40,6 +40,10 @@ def update_plot(frame):
         
         # Garante que o tempo é numérico (ms)
         df['time'] = pd.to_numeric(df['time'], errors='coerce')
+        if 'lux_ref' in df.columns:
+            df['lux_ref'] = pd.to_numeric(df['lux_ref'], errors='coerce')
+        else:
+            df['lux_ref'] = float('nan')
         df = df.dropna(subset=['time'])
 
         if len(df) == 0:
@@ -61,6 +65,8 @@ def update_plot(frame):
         
         # Gráfico 1: Iluminancia medida
         ax1.plot(x_seconds, df_window['lux_meas'], 'r-', label='Lux Meas', linewidth=2)
+        if df_window['lux_ref'].notna().any():
+            ax1.plot(x_seconds, df_window['lux_ref'], 'k--', label='Lux Ref', linewidth=1.8)
         ax1.set_xlabel('Tempo (s)')
         ax1.set_ylabel('Luminância (lux)')
         ax1.set_title('Luminância Medida')

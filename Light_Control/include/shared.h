@@ -78,11 +78,9 @@ extern volatile HistoryBuffers gHistory;
 extern volatile PendingCommands gPending;
 extern critical_section_t gStateLock;
 
-extern float measuredLux0[10];
-extern float measuredLux1[10];
-extern float measuredLux2[10];
 extern bool calibrating;
 extern int calibrating_luminaireId;
+extern bool startupCalibrationPending;
 
 extern bool waiting_can;
 

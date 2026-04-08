@@ -119,15 +119,15 @@ static bool mapCommandToCanMsgType(const Command& cmd, uint8_t& outMsgType) {
 static void resetControllerStateToDefaults() {
   critical_section_enter_blocking(&gStateLock);
 
-  // Reset control inputs to startup defaults (no recalibration).
+  // Reset control inputs to startup defaults.
   gInputs.referenceLux = 20.0f;
   gInputs.occupancyState = 'o';
   gInputs.antiWindupEnabled = true;
   gInputs.feedbackEnabled = true;
   gInputs.manualOverride = false;
-  gInputs.pwm[0] = 0.0f;
-  gInputs.pwm[1] = 0.0f;
-  gInputs.pwm[2] = 0.0f;
+  gInputs.pwm[0] = -1.0f;
+  gInputs.pwm[1] = -1.0f;
+  gInputs.pwm[2] = -1.0f;
   gOutputs.energyCost = 0.0f;
   gInputs.refOccupied = 20.0f;
   gInputs.refLow = 20.0f;
@@ -147,11 +147,21 @@ static void resetControllerStateToDefaults() {
   memset((void*)&gHistory, 0, sizeof(gHistory));
   memset((void*)&gPending, 0, sizeof(gPending));
 
+  // Reset calibration state/data so a new calibration starts from a clean baseline.
+  memset((void*)measuredLux0, 0, sizeof(measuredLux0));
+  memset((void*)measuredLux1, 0, sizeof(measuredLux1));
+  memset((void*)measuredLux2, 0, sizeof(measuredLux2));
+  calibrating = false;
+  calibrating_luminaireId = 0;
+  startupCalibrationPending = true;
+
   critical_section_exit(&gStateLock);
 
   controller.reset();
   setPWM(0.0f);
   reset_flicker_metrics();
+
+  // Calibration bootstrap is now deferred until all nodes are visible on CAN.
 }
 
 // Helper function to send GET command responses (via Serial or CAN)
@@ -478,6 +488,11 @@ void executeCommand(Command cmd) {
       sendGetResponse(cmd, dutyValue);
     }
 
+    else if (cmd.subCmd == "k") {
+      // Get PWM received from a luminaire: g k <i>
+      printExternalPwm();
+    }
+
     else if (cmd.subCmd == "r") {
       // Get reference lux: g r <i>
       float refValue;
@@ -767,7 +782,7 @@ void executeCommand(Command cmd) {
     }
   }
   else if (cmd.mainCmd == "R") {
-    // Restart logical state: reset values to defaults (without recalibration).
+    // Restart logical state and trigger calibration sequence.
     if (cmd.luminaireId < 3) {
       resetControllerStateToDefaults();
       sendCommandResponse(cmd, true);
@@ -799,20 +814,24 @@ void print_to_serial() {
   return;
 #else
   uint32_t timestamp;
+  float referenceLux;
   float luxMeasured;
   float duty;
 
   critical_section_enter_blocking(&gStateLock);
   timestamp = gOutputs.timestampMs;
+  referenceLux = gInputs.referenceLux;
   luxMeasured = gOutputs.luxMeasured;
   duty = gOutputs.duty;
   critical_section_exit(&gStateLock);
 
   // Compact stream format for realtime plotting.
-  // time,luminaire_id,lux_meas,duty_cycle
+  // time,luminaire_id,lux_ref,lux_meas,duty_cycle
   Serial.print(timestamp);
   Serial.print(",");
   Serial.print(_luminaireId);
+  Serial.print(",");
+  Serial.print(referenceLux);
   Serial.print(",");
   Serial.print(luxMeasured);
   Serial.print(",");

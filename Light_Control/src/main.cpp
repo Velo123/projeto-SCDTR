@@ -3,6 +3,7 @@
 #include "pid.h"
 #include "serial.h"
 #include "canv2.h"
+#include "calibration.h"
 #include "shared.h"
 #include <string.h>
 
@@ -83,9 +84,11 @@ void setup() {
 
 void loop() {
   unsigned long now = millis();
-  
-  if (!calibrating && now - lastTimePID >= 10) { // 10ms control period
-    unsigned long elapsedMs = now - lastTimePID;
+  critical_section_enter_blocking(&gStateLock);
+  const bool calibrationActive = calibrating;
+  critical_section_exit(&gStateLock);
+
+  if (!calibrationActive && now - lastTimePID >= 10) { // 10ms control period
     lastTimePID = now;
     applyPendingCommands();
 
@@ -97,15 +100,11 @@ void loop() {
     if (!gInputs.manualOverride) {
       duty = controller.compute(gInputs.referenceLux, lux);
     }
+    
     setPWM(duty);
 
     float ldrVoltage = getavgvoltage(adcAvg);
     float ldrResistance = getLDRresistance(ldrVoltage);
-    constexpr float MAX_DESK_POWER_W = 0.096f; // 96 mW at 100% duty cycle
-    float instantPower = duty * MAX_DESK_POWER_W;
-    float accumulatedEnergy = gOutputs.accumulatedEnergy + instantPower * (static_cast<float>(elapsedMs) / 1000.0f);
-    float averageVisibilityError = compute_avg_visibility_err(gInputs.referenceLux, lux);
-    float averageFlicker = compute_avg_flicker(duty, gInputs.referenceLux);
 
     critical_section_enter_blocking(&gStateLock);
     gOutputs.timestampMs = now;
@@ -113,10 +112,6 @@ void loop() {
     gOutputs.luxMeasured = lux;
     gOutputs.ldrVoltage = ldrVoltage;
     gOutputs.ldrResistance = ldrResistance;
-    gOutputs.instantPower = instantPower;
-    gOutputs.accumulatedEnergy = accumulatedEnergy;
-    gOutputs.averageVisibilityError = averageVisibilityError;
-    gOutputs.averageFlicker = averageFlicker;
 
     // Store last-minute history in a circular buffer.
     gHistory.timestampMs[gHistory.head] = now;
@@ -155,6 +150,27 @@ void setup1() {
 
 void loop1() {
   unsigned long now = millis();
+  critical_section_enter_blocking(&gStateLock);
+  const bool calibrationactive = calibrating;
+  critical_section_exit(&gStateLock);
+
+  if (startupCalibrationPending && _luminaireId == 0 && !calibrationactive) {
+    
+    critical_section_enter_blocking(&gStateLock);
+    float pwm1 = gInputs.pwm[1];
+    float pwm2 = gInputs.pwm[2];
+    critical_section_exit(&gStateLock);
+    if (pwm1 != -1.0f && pwm2 != -1.0f) {
+      startupCalibrationPending = false; // Clear pending flag since we have the necessary data to start calibration
+      critical_section_enter_blocking(&gStateLock);
+      calibrating = true; // Set calibrating flag to indicate calibration is in progress
+      calibrating_luminaireId = 0;
+      startupCalibrationPending = false; // Clear pending flag since calibration is starting
+      critical_section_exit(&gStateLock);
+      calibrate(); // Start calibration for luminaire 0
+    }
+  }
+
   if (got_irq){
     got_irq = false; // Reset flag
     // Process CAN message
@@ -162,28 +178,22 @@ void loop1() {
     can0.clearRXnOVRFlags();  
     can0.clearInterrupts();
   }
+
   if (Serial.available() > 0) {
     handleSerial();
   }
-  if (calibrating!=true)
-  {
-    if (now - lastTimeStream >= 100) {
-      lastTimeStream = now;
-      print_to_serial();
-    }
 
-    if (now - lastTimePWM >= 5) { // 20ms CAN update
-      lastTimePWM = now;
-      // Send PWM value over CAN
-      critical_section_enter_blocking(&gStateLock);
-      float dutyToSend = gOutputs.duty;
-      critical_section_exit(&gStateLock);
-      encode_and_send(INTERNAL,_luminaireId,0,CAN_MSG_PWM,dutyToSend);
-    }
+  if (!calibrationactive && now - lastTimeStream >= 100) {
+    lastTimeStream = now;
+    print_to_serial();
   }
-  
 
-
-  
+  if (!calibrationactive && now - lastTimePWM >= 5) { // 20ms CAN update
+    lastTimePWM = now;
+    // Send PWM value over CAN
+    critical_section_enter_blocking(&gStateLock);
+    float dutyToSend = gOutputs.duty;
+    critical_section_exit(&gStateLock);
+    encode_and_send(INTERNAL, _luminaireId, 0, CAN_MSG_PWM, dutyToSend);
+  }
 }
-

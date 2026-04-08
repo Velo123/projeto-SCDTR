@@ -2,23 +2,33 @@
 #pragma once
 
 
-#define m -0.8 // Slope of log-log curve (assumed)
+
 
 // Build-time role selection:
 // -Drpi1 enables RPI 1 specific code paths.
-// If no role is set, firmware behaves as RPI 2 by default.
+// -Drpi2 enables RPI 2 specific code paths.
+// -Drpi3 enables RPI 3 specific code paths.
+// If no role is set, firmware falls back to luminaire 0 defaults.
 #if defined(rpi1) || defined(RPI1) || defined(RPI_1)
 #define IS_RPI_1 1
 #define IS_RPI_2 0
+#define IS_RPI_3 0
 #define _luminaireId 0
 #elif defined(rpi2) || defined(RPI2) || defined(RPI_2)
 #define IS_RPI_1 0
 #define IS_RPI_2 1
+#define IS_RPI_3 0
 #define _luminaireId 1
+#elif defined(rpi3) || defined(RPI3) || defined(RPI_3)
+#define IS_RPI_1 0
+#define IS_RPI_2 0
+#define IS_RPI_3 1
+#define _luminaireId 2
 
 #else
 #define IS_RPI_1 0
-#define IS_RPI_2 1
+#define IS_RPI_2 0
+#define IS_RPI_3 0
 #define _luminaireId 0
 #endif
 
@@ -27,15 +37,33 @@
 #ifndef B_VALUE
 	#if IS_RPI_1
 		#define B_VALUE 6.10
-	#else
-		#define B_VALUE 5.839462
+    #elif IS_RPI_2
+        #define B_VALUE 5.839462
+	#elif IS_RPI_3
+        #define B_VALUE 6.331
+    #else
+		#define B_VALUE 6
+	#endif
+#endif
+
+#ifndef M_VALUE
+	#if IS_RPI_1
+        #define M_VALUE -0.8
+    #elif IS_RPI_2
+        #define M_VALUE -0.8
+	#elif IS_RPI_3
+        #define M_VALUE -0.728
+    #else
+        #define M_VALUE -0.8
 	#endif
 #endif
 #define b B_VALUE
+#define m M_VALUE 
 
 #define PWM_PIN 9 // PWM output to LED
 #define LDR_PIN 26  // ADC input from LDR voltage divider
 
+#define MAXID 2
 
 #define TS 0.01 // Control period in seconds (10 ms)
 #define PWM_MAX 255 // Maximum PWM value for 8-bit resolution
@@ -52,6 +80,10 @@
     #define debugger_coms 1
     #define debug 1
 #elif IS_RPI_2
+    #define debugger_can 0
+    #define debugger_coms 1
+    #define debug 1
+#elif IS_RPI_3
     #define debugger_can 0
     #define debugger_coms 1
     #define debug 1
